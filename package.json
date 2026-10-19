@@ -1,0 +1,69 @@
+{
+  "name": "dracula-engine",
+  "productName": "Dracula",
+  "version": "0.1.0",
+  "description": "Dracula: The Resurrection and The Last Sanctuary, risen from the grave.",
+  "license": "GPL-3.0-or-later",
+  "author": "Gabriel Maranhão <47640024+gabrielmmaranhao@users.noreply.github.com> (https://github.com/gabrielmmaranhao)",
+  "main": "dist/app/main.js",
+  "desktopName": "dracula.desktop",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/gabrielmmaranhao/dracula-engine.git"
+  },
+  "homepage": "https://github.com/gabrielmmaranhao/dracula-engine#readme",
+  "bugs": {
+    "url": "https://github.com/gabrielmmaranhao/dracula-engine/issues"
+  },
+  "engines": {
+    "node": ">=22.12"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p .",
+    "start": "node scripts/build.mjs && electron .",
+    "dist": "node scripts/build.mjs && electron-builder --linux AppImage --win portable",
+    "dist:linux": "node scripts/build.mjs && electron-builder --linux AppImage",
+    "dist:win": "node scripts/build.mjs && electron-builder --win portable",
+    "test:e2e": "node scripts/build.mjs && node scripts/e2e.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.28.0",
+    "playwright-core": "^1.64.1",
+    "typescript": "^7.0.0"
+  },
+  "build": {
+    "appId": "local.dracula.engine",
+    "productName": "Dracula",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/app/**/*",
+      "package.json"
+    ],
+    "extraFiles": [
+      {
+        "from": "LICENSE",
+        "to": "LICENSE"
+      }
+    ],
+    "linux": {
+      "target": "AppImage",
+      "category": "Game",
+      "icon": "src/renderer/assets/icon.png",
+      "syncDesktopName": true,
+      "artifactName": "Dracula-${version}.AppImage"
+    },
+    "win": {
+      "target": "portable",
+      "icon": "src/renderer/assets/icon.ico",
+      "artifactName": "Dracula-${version}.exe"
+    },
+    "publish": null
+  }
+}

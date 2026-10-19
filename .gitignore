@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+release/
+*.tsbuildinfo
+
+# Game data and assets: never in this repository (see AGENTS.md, rule 2)
+data/
+data2/
+game-data/
+
+# Local runtime data
+saves/
+test-results/
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor and OS
+.DS_Store
+.idea/
+.vscode/
+.claude/settings.local.json
+
+# Environment
+.env
+.env.*.local

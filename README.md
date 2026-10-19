@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/menu.jpg" width="760" alt="Start screen">
+  <img src="docs/images/main-menu.gif" width="760" alt="Start screen">
 </p>
 
 <p align="center">

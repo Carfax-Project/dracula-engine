@@ -43,7 +43,11 @@
 
 ## Run it
 
-You need your own copy of the games, already converted. Then:
+Dracula Engine requires game data files from your own copies of Dracula: The Resurrection and/or Dracula 2: The Last Sanctuary.
+
+**GOG installation support** is a work in progress. For now, the games must be manually converted into a format supported by the engine before they can be played. Instructions for preparing the game files will be provided as support is finalized.
+
+To run the engine in development mode:
 
 ```bash
 npm install
@@ -54,7 +58,5 @@ Build the executables with `npm run dist`.
 
 ## License
 
-The engine is GPLv3 or later ([LICENSE](LICENSE)). The cover art and game screenshots
-belong to their original creators (Index+ / Canal+ Multimedia / Microïds) and are shown
-here only to identify the games, in a non-commercial project. Want them removed? Open
-an issue.
+The engine is licensed under the GNU GPL v3 or later.
+Game assets and screenshots belong to their respective copyright holders and are used for identification purposes only.

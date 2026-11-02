@@ -51,7 +51,6 @@ function half(g: typeof GAMES[number], e: GameEntry) {
   root.querySelector('.name')!.textContent = g.title;
   if (e.status === 'ok') {
     root.dataset.play = g.id;
-    root.title = e.path ?? '';
     root.onclick = () => void start(e);
     root.onmouseenter = root.onfocus = () => select(playable.findIndex((p) => p.el === root));
   } else {

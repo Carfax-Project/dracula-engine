@@ -72,9 +72,6 @@
   #ui .game.unset .caption .name { color: #6d6457; }
   #ui .game.unset .caption .go { visibility: hidden; }   /* keeps both captions on one baseline */
 
-  #ui .keyhint { position: absolute; left: 0; right: 0; bottom: 14px; z-index: 3; pointer-events: none;
-                 text-align: center; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #7d7364; }
-  #ui.nothing .keyhint { display: none; }
 
   #ui .corner { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; gap: 8px; }
   #ui .corner button { display: flex; align-items: center; gap: 0; margin: 0; padding: 8px 12px; line-height: 1;
@@ -148,6 +145,13 @@
   #ui .sheet .opt input[type=range] { flex: 0 0 150px; min-width: 0; }
   #ui .sheet .opt output { width: 46px; text-align: right; font-size: 12px; color: #9c917c;
                            font-variant-numeric: tabular-nums; }
+  #ui .sheet .seg { display: flex; border: 1px solid #3a2a22; }
+  #ui .sheet .seg label { cursor: pointer; }
+  #ui .sheet .seg input { position: absolute; opacity: 0; pointer-events: none; }
+  #ui .sheet .seg span { display: block; padding: 4px 11px; font-size: 12px; color: #9c917c; }
+  #ui .sheet .seg label:hover span { color: #d8c9a3; }
+  #ui .sheet .seg input:checked + span { background: #5a1414; color: #f1e3c2; }
+  #ui .sheet .seg input:focus-visible + span { outline: 1px solid #c2714f; outline-offset: -1px; }
   #ui .sheet kbd { font-family: ui-monospace, monospace; font-size: 11px; color: #9c917c;
                    border: 1px solid #3a2a22; padding: 1px 6px; }
   #ui .sheet .row { align-items: center; }
@@ -187,7 +191,6 @@
     <button class="gear" aria-label="Settings"><span class="glyph">⚙</span><span class="label">Settings</span></button>
     <button class="quit" aria-label="Quit"><span class="glyph">✕</span><span class="label">Quit</span></button>
   </div>
-  <div class="keyhint">← → choose · Enter play</div>
 </template>
 
 <template id="tpl-game">
@@ -226,10 +229,12 @@
 <template id="tpl-prefs">
   <label class="opt"><span>Volume</span>
     <input type="range" name="volume" min="0" max="100" step="1"><output></output></label>
-  <label class="opt"><span>Mouse sensitivity (classic mouse)</span>
+  <div class="opt"><span>Mouse</span>
+    <div class="seg"><label><input type="radio" name="classic" value="1"><span>Original</span></label><label><input type="radio" name="classic" value="0"><span>Free cursor</span></label></div></div>
+  <label class="opt"><span>Look speed</span>
     <input type="range" name="sensitivity" min="25" max="300" step="5"><output></output></label>
-  <label class="opt"><input type="checkbox" name="classic"><span>Classic mouse</span></label>
-  <label class="opt"><input type="checkbox" name="stretch"><span>Stretch to the window</span></label>
+  <div class="opt"><span>Aspect ratio</span>
+    <div class="seg"><label><input type="radio" name="stretch" value="0"><span>Original 4:3</span></label><label><input type="radio" name="stretch" value="1"><span>Fill screen</span></label></div></div>
   <label class="opt"><input type="checkbox" name="skipIntro"><span>Skip the intro and start at the menu</span></label>
 </template>
 
@@ -251,8 +256,8 @@
       <span>Inventory</span><span><kbd>Right click</kbd><kbd>Tab</kbd></span>
       <span>Game menu</span><span><kbd>Esc</kbd></span>
       <span>Skip video</span><span><kbd>Space</kbd><kbd>Esc</kbd></span>
-      <span>Classic / free mouse</span><span><kbd>F2</kbd></span>
-      <span>Stretched / 4:3</span><span><kbd>F3</kbd></span>
+      <span>Mouse mode</span><span><kbd>F2</kbd></span>
+      <span>Aspect ratio</span><span><kbd>F3</kbd></span>
       <span>Options</span><span><kbd>F10</kbd></span>
       <span>Fullscreen</span><span><kbd>F11</kbd></span>
     </div>

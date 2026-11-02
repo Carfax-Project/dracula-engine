@@ -31,7 +31,7 @@ support, by decision; don't add a `mac` build target.
 2. **No game assets in this repository** (scripts, images, sounds, videos, extracted
    text). The engine must stay distributable on its own. One deliberate exception:
    the two box-art covers in `src/renderer/assets/`, the app
-   icon next to them, and the four README screenshots in `docs/images/`, all covered
+   icon next to them, and the README animations in `docs/images/`, all covered
    by the attribution notice in the README's License section. Don't add any other
    game file.
 3. **No hardcoded paths** to anyone's machine. The user picks one folder holding
@@ -144,7 +144,7 @@ scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
 scripts/e2e.mjs           End-to-end smoke test
 scripts/test.mjs          Unit test runner
 test/                     Unit tests (importer decoders, file lookup, util)
-docs/images/              README screenshots (start screen + three scenes)
+docs/images/              README animations (start screen, three scenes, options menu)
 ```
 
 ## Architecture notes
@@ -212,9 +212,10 @@ docs/images/              README screenshots (start screen + three scenes)
   - The renderer loads all slots at game start (`platform.loadSaves`), then reads
     them synchronously; writes go through IPC.
   - Slot 9 is used internally by the game scripts; saving to it shows no "Game saved" message.
-- **Preferences.** `classic` (pointer-lock mouse, default on), `stretch` (fill the
-  window, default on), `volume` (0–1, default 1), `sensitivity` (classic-mouse
-  speed, 0.25–3, default 1) and `skipIntro` (default off), stored in
+- **Preferences.** `classic` (pointer-lock mouse, shown as Mouse: Original / Free
+  cursor, default on), `stretch` (shown as Aspect ratio: Fill screen / Original 4:3,
+  default on), `volume` (0–1, default 1), `sensitivity` (shown as Look speed, for the
+  pointer-lock mouse, 0.25–3, default 1) and `skipIntro` (default off), stored in
   `<userData>/prefs.json`. `skipIntro` makes `enterWarp` send `Debut.vr` (both games'
   logos and opening movies, which end at `Interface.vr`, the menu) straight to the
   menu; Dracula 1's "new game" also passes through `Debut.vr`. `platform.pref` takes
@@ -296,8 +297,9 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   the WebGL canvas into one would read the whole frame back every refresh. Hidden in
   stretch mode, where there are no bars.
 - **Options menu (`F10`).** `tpl-options`, shown on the `#ui` layer as `#ui.menu`:
-  the `tpl-prefs` rows (volume, mouse sensitivity, classic mouse, stretch, skip
-  intro; wired by `bindSettings` with live hooks) plus fullscreen, next to the
+  the `tpl-prefs` rows (volume, mouse mode, look speed, aspect ratio, skip intro;
+  the two modes are radio pairs styled as one segmented control, `.seg`; wired by
+  `bindSettings` with live hooks) plus fullscreen, next to the
   Controls list. Every shortcut lives only in that list, never on the setting rows;
   keep it, the README's Controls table and the key handlers in step.
   While it is open the game holds still: the main loop and every `frameLoop` sit in
@@ -307,7 +309,7 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   Opening it releases the pointer lock; `F10` or Resume takes it back, Esc can't (it
   is not a user gesture), so the next click does. Keys other than F10/Esc are
   ignored while it is open.
-- **Hotkeys.** The engine's own shortcuts are F keys: F2 classic mouse, F3 stretch,
+- **Hotkeys.** The engine's own shortcuts are F keys: F2 mouse mode, F3 aspect ratio,
   F10 options, F11 fullscreen, and in dev builds F4 clickable areas. Those used to reach the scripts
   as `lockkey` codes, but neither game binds any of them (the data only uses 0 and
   12), so F1 and F5–F9 still go to the scripts. Esc, Space, Enter, Tab, Backspace

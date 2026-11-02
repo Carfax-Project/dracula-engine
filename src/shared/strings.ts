@@ -35,10 +35,10 @@ export const UI = {
   importCrashed: (code: number) => "the importer stopped unexpectedly (" + code + ")",
 
   // -------------------------------------------------------- in-game messages
-  classicMouse: "Classic mouse: the mouse turns the camera (F2 to switch)",
-  freeMouse: "Free look: drag to look around (F2 to switch)",
-  stretched: "Stretched to the window (F3 to toggle)",
-  original43: "Original 4:3 (F3 to toggle)",
+  classicMouse: "Mouse: Original, the mouse turns the view (F2 to switch)",
+  freeMouse: "Mouse: Free cursor, drag to look around (F2 to switch)",
+  stretched: "Aspect ratio: Fill screen (F3 to switch)",
+  original43: "Aspect ratio: Original 4:3 (F3 to switch)",
   volumeValue: (v: number) => Math.round(v * 100) + "%",
   sensitivityValue: (v: number) => v.toFixed(2) + "×",
   saved: "Game saved",

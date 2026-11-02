@@ -22,14 +22,20 @@ export function bindSettings(root: ParentNode, hooks: SettingsHooks = {}) {
     el.oninput = () => { const v = el.valueAsNumber / 100; out.textContent = show(v); hooks[name]?.(v); };
     el.onchange = () => platform.setPref(name, el.valueAsNumber / 100);
   };
-  const toggle = (name: 'classic' | 'stretch' | 'skipIntro', on: boolean) => {
+  const choice = (name: 'classic' | 'stretch', on: boolean) => {
+    for (const el of root.querySelectorAll<HTMLInputElement>(`input[name=${name}]`)) {
+      el.checked = (el.value === '1') === on;
+      el.onchange = () => { const v = el.value === '1', h = hooks[name]; if (h) h(v); else platform.setPref(name, v); };
+    }
+  };
+  const toggle = (name: 'skipIntro', on: boolean) => {
     const el = input(name);
     el.checked = on;
-    el.onchange = () => { const h = name === 'skipIntro' ? undefined : hooks[name]; if (h) h(el.checked); else platform.setPref(name, el.checked); };
+    el.onchange = () => platform.setPref(name, el.checked);
   };
   slider('volume', prefVolume(), UI.volumeValue);
   slider('sensitivity', prefSensitivity(), UI.sensitivityValue);
-  toggle('classic', platform.pref('classic', true));
-  toggle('stretch', platform.pref('stretch', true));
+  choice('classic', platform.pref('classic', true));
+  choice('stretch', platform.pref('stretch', true));
   toggle('skipIntro', platform.pref('skipIntro', false));
 }

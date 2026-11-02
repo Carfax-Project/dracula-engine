@@ -63,4 +63,5 @@ Build the packages with `npm run dist`: the AppImage and the `.deb` on Linux, th
 ## License
 
 The engine is licensed under the GNU GPL v3 or later.
+Dracula Engine is a fan project, not affiliated with or endorsed by Microïds.
 Game assets and screenshots belong to their respective copyright holders and are used for identification purposes only.

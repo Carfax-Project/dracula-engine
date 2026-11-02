@@ -46,9 +46,16 @@ export async function fetchData<T>(url: string): Promise<T> {
   return JSON.parse(s.slice(a, b)) as T;
 }
 
+export async function fetchJson<T>(url: string): Promise<T> {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ': ' + (r.status === 404 ? 'not found' : r.status));
+  return await r.json() as T;
+}
+
 export function loadImage(src: string): Promise<HTMLImageElement | null> {
   return new Promise((resolve) => {
     const img = new Image();
+    img.crossOrigin = 'anonymous';
     img.decoding = 'async';
     img.onload = () => resolve(img);
     img.onerror = () => { warn('image not found', src.slice(0, 120)); resolve(null); };

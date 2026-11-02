@@ -15,18 +15,19 @@ adventures built on the PhoenixVR engine:
 The engine was ported from the plain-browser runtime of `dracula-port`, an earlier
 version of this same project; it is not based on any other codebase. GPLv3 or later.
 
-The app does **not** convert anything yet. It reads data folders produced by the
-sibling project `dracula-port` (Python and C++ converters).
+The app converts the original game files itself (Settings → "Import from game
+files…", or `npm run import`) into data folders it then plays from. The sibling
+project `dracula-port` (Python and C++) was the earlier converter.
 
-Platforms: Linux (AppImage) and Windows (portable `.exe`) only. There is no macOS
+Platforms: Linux (AppImage and `.deb`) and Windows (a per-user NSIS installer, no admin rights) only. There is no macOS
 support, by decision; don't add a `mac` build target.
 
 ## Hard rules
 
-1. **Never write into the game data folders**, and never modify, re-encode or "optimize"
-   existing converted assets in place. A converter, a lighter scene format and an
-   upscale are all planned (see "Known gaps"), but only start them when asked; until then, don't add re-encoding, format changes or format benchmarks.
-   When one of them is done, it writes new output and leaves the old folders intact.
+1. **Never write into the game data folders** from the app or the tests. Converting
+   or re-encoding data is a separate step, done only when the user asks, and it either
+   writes new output or keeps a backup of what it replaces. The engine reads only the
+   current data format (`DATA_FORMAT`); there is no compatibility layer for older ones.
 2. **No game assets in this repository** (scripts, images, sounds, videos, extracted
    text). The engine must stay distributable on its own. One deliberate exception:
    the two box-art covers in `src/renderer/assets/`, the app
@@ -56,6 +57,10 @@ support, by decision; don't add a `mac` build target.
 
 ## Working on this repo
 
+- **Comments only when strictly necessary**: a non-obvious why (an engine quirk,
+  a browser constraint, a workaround). Never restate what the code does, and no
+  doc comments, section banners or explanatory comments on self-explanatory code.
+
 - Do what was asked, verify it, and report briefly. No side quests (benchmarks,
   speculative features).
 - When only a question is asked, answer it; don't edit files.
@@ -71,7 +76,8 @@ npm start                 # build + run the desktop app
 npm run build             # esbuild bundles to dist/app
 npm run typecheck         # tsc --noEmit, strict mode (must pass)
 npm run test:e2e          # Playwright drives the real app (see below)
-npm run dist              # AppImage + portable .exe into release/
+npm run dist              # release build (DEV off) for this OS: AppImage + .deb on Linux, NSIS installer on Windows
+npm run import -- --game <GOG folder> --out <new data folder> [--overlay <translation>]
 ```
 
 E2E test: `DRACULA_TEST_D1=<data> DRACULA_TEST_D2=<data2> npm run test:e2e`
@@ -80,6 +86,9 @@ E2E test: `DRACULA_TEST_D1=<data> DRACULA_TEST_D2=<data2> npm run test:e2e`
 - Stubs the native folder dialog.
 - Headless: run under `xvfb-run -a`, add `DRACULA_TEST_SWGL=1` when there is no GPU.
 - Running as root needs `--no-sandbox`; the script adds it.
+- Terminals inside VS Code export `ELECTRON_RUN_AS_NODE=1`, which makes Electron
+  start as plain Node ("Process failed to launch!"). Run with
+  `env -u ELECTRON_RUN_AS_NODE …` there.
 
 Requirements and runtime details (kept out of the README, which is for players):
 
@@ -104,7 +113,14 @@ src/main/main.ts          Electron main: window, game:// protocol (Range support
 src/main/preload.ts       contextBridge -> window.dracula (NativeApi)
 src/shared/format.ts      Types: data folder format, GameEntry, Library, NativeApi
 src/shared/strings.ts     UI object: every player-visible string, main + renderer
-src/renderer/app.ts       Start screen: the two covers, the gear sheet, start a game
+src/importer/             Original game files -> data format 3 (Node; ffmpeg for encoding):
+                          vr.ts (.vr decoder), lst.ts (scripts), formats.ts (.pak, .tst,
+                          .pcx, .arn), fourxm.ts (Dracula 1's raw 4XM movies), files.ts
+                          (file lookup, overlays, per-folder variants), ffmpeg.ts (WebP,
+                          Opus, VP9), import.ts, cli.ts (npm run import [-- --no-videos]),
+                          worker.ts (the utility process the import screen runs)
+src/renderer/app.ts       Start screen: the two covers, the gear sheet, the import
+                          screen, start a game
 src/renderer/engine.ts    The engine (script interpreter, warps, input, sound, video, saves)
 src/renderer/panorama.ts  WebGL 360° cube-face renderer + camera math
 src/renderer/backdrop.ts  4:3 mode: fills the bars with the current frame, blurred
@@ -112,10 +128,14 @@ src/renderer/shaders/     GLSL shaders (.glsl), inlined by esbuild's text loader
 src/renderer/assets/      Cover art and the app icon (icon.ico + icon.png), copied to
                           dist/ and served from game://app/assets/
 src/renderer/platform.ts  Bridge to the main process (NativeApi): data, saves, prefs
+src/renderer/settings.ts  Player settings rows (tpl-prefs) shared by the gear sheet
+                          and the in-game options menu
 src/renderer/util.ts      Constants, angles, region hit tests, data loading
+src/renderer/env.d.ts     The build-time DEV flag
 src/renderer/index.html   Page + CSS (layered canvases: gl, screen2d, overlay; video)
                           and the <template> markup for every runtime screen
-scripts/build.mjs         esbuild config (main/preload as CJS, renderer as IIFE)
+scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
+                          renderer as IIFE; --release turns DEV off)
 scripts/e2e.mjs           End-to-end smoke test
 docs/images/              README screenshots (start screen + three scenes)
 ```
@@ -125,15 +145,31 @@ docs/images/              README screenshots (start screen + three scenes)
 - **Protocol.** `game://app/...` serves `dist/app/renderer`. `game://<gameId>/...`
   serves that game's configured data folder, and only while it validates. Path
   traversal is blocked by `resolveInside`. Video and audio need HTTP Range: keep it.
+  Game data is another origin than the page, so responses carry
+  `Access-Control-Allow-Origin: game://app` and `loadImage` sets `crossOrigin`;
+  without both, canvases drawn from game images are tainted (save thumbnails and
+  `.arn` overlays read pixels back).
 - **Start screen.** The two covers split the window; each half is a `.game` carrying
-  `data-play=<id>` once its game was found. The art uses `object-fit: contain` so the
-  box art is never cropped; a game that was not found gets the `unset` class and stays
-  dark. The halves carry no controls at all; everything lives in the `.corner` pair at
-  the top right: the gear, which opens the `tpl-settings` sheet (chosen folder, what
-  was detected per game, and the one "Choose folder…" button — `data-choose`, which
-  the e2e test clicks), and a quit button calling `platform.quit()`. The gear
-  brightens (`#ui.nothing`) while nothing is playable, since it is then the only
-  thing worth clicking.
+  `data-play=<id>` once its game was found. The art (`img.art`) uses `object-fit:
+  contain` so the box art is never cropped; behind it the same picture (`img.blur`),
+  blurred and covering, fills the bars. Only its opacity animates, never the blur.
+  A game that was not found gets the `unset` class and stays dark.
+  - **Selection.** One cover at a time is `.sel` (and `.games` is `.picking`), set
+    by the mouse, keyboard focus or ←/→; Enter or Space plays it, or the first
+    playable game when none is selected. The
+    styling hangs on `.sel`, not `:hover`, so every input looks the same. The keys
+    are ignored while the gear sheet is open or a corner button has the focus.
+  - **Corner.** The halves carry no controls; the `.corner` pair at the top right
+    holds the gear and quit (`platform.quit()`), each a glyph in a pill whose label
+    slides out on hover. The gear opens the `tpl-settings` sheet: chosen folder, what
+    was detected per game, the "Choose folder…" button (`data-choose`, which the
+    e2e test clicks), "Import from game files…" (`data-import`, opens `tpl-import`),
+    the player settings from `tpl-prefs`, stored for the next game, and the version
+    in the footer. While nothing is playable (`#ui.nothing`) the gear shows its label and
+    stands out, since it is then the only thing worth clicking.
+- **Version.** `version` in `package.json` is the only source: electron-builder names
+  the packages after it, and the settings sheet footer shows it (`app.getVersion()`
+  through the `version` IPC). Bump it there before a release.
 - **App icon.** One source, `assets/icon.ico` (16/32/48/256 px). `icon.png` is its
   256 px entry, extracted byte for byte, because Electron loads `.ico` only on
   Windows: window and `win` build use the `.ico`, Linux uses the PNG. If the icon
@@ -149,7 +185,9 @@ docs/images/              README screenshots (start screen + three scenes)
   Add new IPC there, in `preload.ts` and in `main.ts`, and validate arguments in main.
 - **Validating a game folder.** It must contain `index.js` starting with
   `__dracula.put(`, and `manifest.game` must match the id; a missing `game` field
-  means `dracula1`, since early conversions lack it. `chooseLibrary` runs `locate()`
+  means `dracula1`, since early conversions lack it. A `manifest.format` other than
+  `DATA_FORMAT` (missing means 1) gives the status `outdated`: the game is found but
+  not playable, and the gear sheet says to convert it again. `chooseLibrary` runs `locate()`
   once per game over the picked folder: it matches the folder itself or any direct
   subfolder (symlinks included), so picking the parent finds both games, and picking a
   single game's folder finds just that one. `config.json` keeps `root` (what the user
@@ -162,25 +200,47 @@ docs/images/              README screenshots (start screen + three scenes)
   - The renderer loads all slots at game start (`platform.loadSaves`), then reads
     them synchronously; writes go through IPC.
   - Slot 9 is used internally by the game scripts; saving to it shows no "Game saved" message.
-- **Preferences.** `classic` (pointer-lock mouse, default on) and `stretch` (fill the
-  window, default on), stored in `<userData>/prefs.json`.
+- **Preferences.** `classic` (pointer-lock mouse, default on), `stretch` (fill the
+  window, default on), `volume` (0–1, default 1), `sensitivity` (classic-mouse
+  speed, 0.25–3, default 1) and `skipIntro` (default off), stored in
+  `<userData>/prefs.json`. `skipIntro` makes `enterWarp` send `Debut.vr` (both games'
+  logos and opening movies, which end at `Interface.vr`, the menu) straight to the
+  menu; Dracula 1's "new game" also passes through `Debut.vr`. `platform.pref` takes
+  the default's type, so a value of the wrong type falls back to it.
 
 ## Data folder format (read-only input)
 
-Every file is JavaScript of the form `__dracula.put("kind","key",<json>);`. It was
-built so the old runtime could load it with `<script>` tags from `file://`. This app
-uses `fetch` and parses the JSON part (`fetchData` in `util.ts`).
+Format 3 (`DATA_FORMAT` in `src/shared/format.ts`). `index.js` and the scripts are
+JavaScript of the form `__dracula.put("kind","key",<json>);` (a leftover from the old
+runtime, which loaded them with `<script>` tags); this app fetches them and parses the
+JSON part (`fetchData`). Everything else is plain files in three formats: every image
+is WebP (faces and screens lossy at quality 95; atlases, cursors and `.arn` pictures
+lossless), sounds are Ogg Opus, movies WebM. Lossy WebP is always 4:2:0, which costs
+~3.5 dB against a 4:4:4 JPEG of the same size; chosen anyway for one image format.
 
 ```
-index.js             { manifest: { game, title?, scripts[], start, arn? }, vr: {name: {type, anims}}, tests: {name: Region[]} }
-cursors.js           { stem: "data:image/png;base64,..." }
-arn.js               { stem: dataURL }          Dracula 2 only (gun sight, magnifier, timer bar...)
+index.js             { manifest: { format: 3, game, title?, scripts[], start, arn? }, vr: {name: {type, anims}}, tests: {name: Region[]},
+                       variants?: {script: {"name.ext": "name~folder.ext"}} }
 scripts/<name>.js    { vars[], warps[{ vr, test, tests[{ idx, hover, labels, cmds[] }] }] }
-vr/<name>/assets.js  { meta: { type: panorama|screen, animations[{ name, restart_at, patches[{ atlas, blocks[[face,x,y]] }] }] },
-                       images: { "face0.png".."face5.png" | "image.png", "<atlas>.png": dataURL } }
-sound/<name>.wav     (lowercase file name as referenced by scripts)
+vr/<name>/meta.json  { type: panorama|screen, images: [6 faces | 1 picture] (file names, null if missing),
+                       animations[{ name, restart_at, patches[{ atlas: file name, blocks[[face,x,y]] }] }] }
+vr/<name>/*.webp     the files meta.json names
+cursors/<stem>.webp
+arn/<stem>.webp      Dracula 2 only (gun sight, magnifier, timer bar...)
+sound/<stem>.opus    (lowercase stem of the name scripts use)
 movie/<name>.webm    (VP9 + Opus, lowercase stem)
 ```
+
+`variants`: Dracula 2 keeps 21 files with the same name but different content in
+`DataM1` and `DataM2`, and the original engine looks in the running script's folder
+first. The importer writes those copies as `<name>~<folder>` and maps them per
+script; the engine resolves every file name through `Engine.file()` (scenes, click
+regions, sounds, cursors, movies). Without it, one mission gets the other's files
+(e.g. the notebook has 4 click regions in mission 1, where the 4th turns the page,
+and 3 in mission 2). Folders converted by `dracula-port` have no variants.
+
+Format 1 had every image as base64 inside `.js` files; format 2 had plain JPEG/PNG
+images and WAV sounds. Only the importer writes format 3.
 
 The script command set (`op` values) is defined by `dracula-port/tools/scripts/lst2json.py`
 and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
@@ -210,9 +270,7 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   - On 2D screens the locked mouse moves a virtual cursor.
   - Losing the lock without a recent Esc keydown is treated as Esc (key code 0),
     because Chromium often eats the key.
-- **Gamepad.** Polled each frame (`pollGamepad`). Using it centres the crosshair in
-  panoramas (`pad.active`). Mouse movement clears that.
-- **4:3 <-> stretched easing.** `layout(true)`, called only by the `A` toggle, adds
+- **4:3 <-> stretched easing.** `layout(true)`, called only by the `F3` toggle, adds
   `#box.easing` so the box width/height transition over `LAYOUT_EASE_MS` (450 ms) and
   the frame visibly stretches or pulls back in. Window resizes call `layout()` without
   it, so dragging a window edge never lags. While easing, the WebGL canvas keeps the
@@ -225,6 +283,68 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   canvas at least that big: smaller canvases are CPU-backed in Chromium, and copying
   the WebGL canvas into one would read the whole frame back every refresh. Hidden in
   stretch mode, where there are no bars.
+- **Options menu (`F10`).** `tpl-options`, shown on the `#ui` layer as `#ui.menu`:
+  the `tpl-prefs` rows (volume, mouse sensitivity, classic mouse, stretch, skip
+  intro; wired by `bindSettings` with live hooks) plus fullscreen, next to the
+  Controls list. Every
+  shortcut lives only in that list, never on the setting rows; keep it, the
+  README's Controls table and the key handlers in step.
+  While it is open the game holds still: the main loop and every `frameLoop` sit in
+  `hold()`, which keeps drawing the scene (a layout change clears the WebGL canvas)
+  but advances no time, and the movie and one-shot sounds are paused (scripts wait
+  on them). Looping sounds and music play on, so a volume change can be heard.
+  Opening it releases the pointer lock; `F10` or Resume takes it back, Esc can't (it
+  is not a user gesture), so the next click does. Keys other than F10/Esc are
+  ignored while it is open.
+- **Hotkeys.** The engine's own shortcuts are F keys: F2 classic mouse, F3 stretch,
+  F10 options, F11 fullscreen, and in dev builds F4 clickable areas. Those used to reach the scripts
+  as `lockkey` codes, but neither game binds any of them (the data only uses 0 and
+  12), so F1 and F5–F9 still go to the scripts. Esc, Space, Enter, Tab, Backspace
+  and the arrows are game controls. No letter keys are used. There is no gamepad
+  support, by decision.
+- **Dev-only code.** `build.mjs` defines `DEV` (declared in `env.d.ts`): true for
+  `npm start` and the e2e test, false with `--release` (the `dist` scripts), where
+  `minifySyntax` drops every `if (DEV)` branch. Debug aids such as the clickable
+  areas (F4) go behind it and never reach a release; keep their code reachable only
+  from such a branch (e.g. a module-level function) so the bundle drops it.
+- **Importer** (`src/importer/`). The user points at an installed game (the GOG
+  version) plus, optionally, a translation folder whose files override the game's
+  (like `--overlay` in `dracula-port`; copies with 32 KB+ zero runs are skipped as
+  damaged CD reads), and it writes format 3. The engine never reads the original
+  files; only the importer does. Port from `dracula-port` only what the importer
+  needs; the engine already has the rest.
+  - Scripts (`.lst`, `.pak`), click regions, scenes, cursors (only `.pcx`: scripts
+    never name the `.gif`/`.bmp` copies), `.arn` (root copy), sounds and movies.
+    Verified against the `dracula-port` output: identical scripts, regions and `.arn`
+    pictures, animation atlases and cursors identical pixel for pixel; the remaining
+    differences are files from other sources (the PT-BR CD, another Dracula 2
+    build). Every Opus sound decodes to its WAV's length within 0.04 ms, so loops
+    are seamless.
+  - Movies: Dracula 2's 4XM is standard and ffmpeg reads it. Dracula 1's raw 4XM is
+    decoded by `fourxm.ts` (bit-identical to `dracula-port`'s C++ on all 130 GOG
+    movies, frames and audio) and piped to ffmpeg; its audio is cut or padded to the
+    video's length first, because `-shortest` overshoots (and `dracula-port`'s
+    output lost the last frames). VP9 CRF 30 + Opus, `dracula-port`'s settings.
+  - Encoding goes through `ffmpeg-static` (an npm dependency that downloads the
+    binary for the OS it is installed on; nothing OS-specific lives in the repo).
+    `asarUnpack` keeps it runnable in a packaged app; `ffmpeg.ts` runs up to one
+    process per core, `stopAll()` kills them. Because the binary is per OS,
+    `npm run dist` builds only the current OS's package.
+  - Import screen (`tpl-import`, `openImport` in `app.ts`): the renderer never sends
+    paths; `importPick` opens a dialog and main keeps the choice. `importStart` forks
+    `import-worker.js` as an Electron utility process (decoding would otherwise block
+    the main process), relays its progress as `importProgress` events, and writes to
+    `<dest>/<game>.partial`, renamed to `<dest>/<game>` when done; then
+    `config.json` points that game at it. An existing `<dest>/<game>` is never
+    overwritten. `<dest>` defaults to the library root, else `defaultGamesDir()`:
+    `%LOCALAPPDATA%\Dracula\Games` on Windows, `$XDG_DATA_HOME` (or
+    `~/.local/share`)`/Dracula/games` on Linux; local data, never synced. Stop aborts the import and kills ffmpeg; starting again resumes
+    (scenes with a `meta.json`, sounds and movies already written are skipped).
+  - Time: about 15 minutes per game on 12 cores, mostly the movies.
+- **Sound.** Web Audio: each sound is a decoded `AudioBuffer` played by a buffer
+  source into its own gain, then the master gain (the volume setting). Loops use
+  `source.loop`, which is seamless; `<audio loop>` leaves a gap with Opus. Pausing
+  (the options menu) stops the source and keeps the offset to restart from.
 - **Blocking commands.** `wait`, `until`, `fade`, `transfade`, `interpolangle` and
   `movie` run their own `frameLoop`. Space or Esc skips them.
 - **Fullscreen.** Picking a game calls `platform.setFullscreen(true)` before loading
@@ -232,37 +352,23 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   pointer lock (a resize can drop it). The start screen itself stays windowed.
 - **End of game.** There is no end screen: when a script quits, `backToStart()` stops
   the sound, releases the pointer lock and reloads the page, which lands back on the
-  cover selection. The window stays fullscreen; `F` / `F11` toggle it on every
+  cover selection. The window stays fullscreen; `F11` toggles it on every
   screen (`app.ts` handles them until a game starts, then the engine takes over;
   never let both react, or the two toggles cancel out).
 
 ## Known gaps / ideas (not started; ask first)
 
-- In-game settings overlay, opened by a hotkey: volume (`masterVolume` exists but
-  has no UI), mouse sensitivity, and the options that today are hotkeys only. Pick
-  a key the engine doesn't already use (taken: Esc, Space, Enter, Tab, F1–F11, F, L,
-  A, H, the arrows).
-- Bring the converter into this project: turn the original games' files into the
-  data folder format this engine reads, so `dracula-port` is no longer needed. Today
-  that lives in `dracula-port` (Python and C++: scripts, VR images, 4XM video).
-  Its first version must produce the current format exactly, since existing
-  folders stay as they are; the format changes below come after that.
-- Lighter, simpler assets: store each scene as a 360° picture in plain PNG/JPG files
-  instead of base64 images inside `vr/<name>/assets.js`, and cut the overall size.
-  Watch out: animations patch atlas blocks onto specific cube faces (`[face, x, y]`),
-  and the shader samples six faces. Keeping six face files is a small change; an
-  equirectangular image means reprojecting every patch and rewriting the shader.
 - Mass upscale of every asset (scenes, 2D screens, cursors, overlays, maybe videos).
   Logical coordinates must not move: click regions, cursor positions and the 640×480
   screen space stay as they are, only the pictures get sharper. Mind the Dracula 2
   face quirk (`uXScale = 511/512`), which is tied to the original face width.
 
 - Release builds on GitHub Actions: a workflow in `.github/workflows/` that runs
-  when a version tag (`v*`) is pushed on `main`, builds the AppImage and the portable
-  `.exe` (Linux and Windows runners), and attaches them to a GitHub release.
+  when a version tag (`v*`) is pushed on `main`, builds the AppImage, the `.deb` and the
+  Windows installer (Linux and Windows runners), and attaches them to a GitHub release.
 
-The lighter-assets and upscale items change the data format, so they need a format version in `index.js`
-the engine can check, with the current format still supported.
+A change to the data format bumps `DATA_FORMAT`; folders in the old format are then
+reported as outdated and converted again, not supported side by side.
 
 ## Related project
 

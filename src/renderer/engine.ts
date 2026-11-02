@@ -8,13 +8,14 @@
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
  */
-import type { Cmd, GameId, GameIndex, Region, SaveFile, Script, Test, VrAssets, Warp } from '../shared/format';
+import type { Cmd, GameId, GameIndex, Region, SaveFile, Script, Test, VrMeta, Warp } from '../shared/format';
 import { UI } from '../shared/strings';
 import { camera, type Camera, PanoramaRenderer, rayAngles } from './panorama';
 import { startBackdrop } from './backdrop';
 import { platform } from './platform';
+import { bindSettings, prefSensitivity, prefVolume } from './settings';
 import {
-  $, Angle, AngleX, AngleY, atoi, baseOf, clamp, contains2D, contains3D, fetchData, H, loadImage, log, lower,
+  $, Angle, AngleX, AngleY, atoi, baseOf, clamp, clone, contains2D, contains3D, fetchData, fetchJson, H, loadImage, log, lower,
   nextFrame, PI, PI2, stemOf, TAU, THUMB_H, THUMB_W, W, warn,
 } from './util';
 
@@ -26,11 +27,28 @@ interface Anim {
 interface VrState { name: string; isVR: boolean; imgs: (Img | null)[]; anims: Anim[] }
 interface Ctx { running: boolean; sub: boolean; root: Test }
 interface Cursor { img: Img | null; ox: number; oy: number; failed: boolean }
-interface SoundEntry { audio: HTMLAudioElement; volume: number; loops: number; music: boolean; ended: boolean; stopped: boolean }
+interface SoundEntry {
+  volume: number; loops: number; music: boolean; gain: GainNode; buffer: AudioBuffer | null;
+  source: AudioBufferSourceNode | null; startedAt: number; offset: number; paused: boolean; ended: boolean; stopped: boolean;
+}
 type Ev = { type: 'click' } | { type: 'rclick' } | { type: 'skip' } | { type: 'key'; code: number };
 interface View { ax: number; ay: number; fov: number }
 
 export interface GameInfo { id: GameId; title: string; base: string; index: GameIndex }
+
+function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | null) {
+  o.strokeStyle = '#ff0';
+  o.lineWidth = 1;
+  if (!cam) {
+    for (const r of regs) o.strokeRect(r[0], r[2], r[1] - r[0], r[3] - r[2]);
+    return;
+  }
+  o.fillStyle = 'rgba(255,255,0,0.25)';
+  for (let y = 0; y < H; y += 8) for (let x = 0; x < W; x += 8) {
+    const [a, b] = rayAngles(cam, x + 4, y + 4);
+    if (regs.some((r) => contains3D(r, a, b))) o.fillRect(x, y, 8, 8);
+  }
+}
 
 const NO_TIMER = () => ({ flags: 0, t: 0, initial: 0, show: false, warp: '' });
 
@@ -55,13 +73,12 @@ export class Engine {
   private base = '';
   private index!: GameIndex;
   private faceXScale = 1;
-  private cursorData: Record<string, string> = {};
-  private arnData: Promise<Record<string, string>> | null = null;
 
   private vars = new Map<string, number>();
   private declared = new Set<string>();
   private script!: Script;
   private scriptVars: string[] = [];
+  private variants: Record<string, string> = {};
   private warpIndex = new Map<string, number>();
   private cursors: { name: string; hidden: boolean }[][] = [];
   private warpIdx = -1;
@@ -107,9 +124,15 @@ export class Engine {
   private lastEscKey = 0;
   private showRegions = false;
   private keyPan: [number, number] | null = null;
-  private pad = { active: false, buttons: [] as boolean[], dx: 0, dy: 0, cx: 0, cy: 0 };
   private cursorCache = new Map<string, Cursor>();
-  private masterVolume = 1;
+  private masterVolume = prefVolume();
+  private sensitivity = prefSensitivity();
+  private menu: HTMLElement | null = null;
+  private heldVideo = false;
+  private heldSounds: SoundEntry[] = [];
+  private audio = new AudioContext();
+  private master = this.audio.createGain();
+  private soundCache = new Map<string, Promise<AudioBuffer | null>>();
   private msgTimer = 0;
 
   // Dracula 2 plugins: timer, AfficheImage, Waves, Cible
@@ -127,6 +150,8 @@ export class Engine {
       c.width = 512; c.height = 512;
       this.faces.push(c);
     }
+    this.master.gain.value = this.masterVolume;
+    this.master.connect(this.audio.destination);
     this.snapshot.width = W; this.snapshot.height = H;
     this.thumbnail.width = THUMB_W; this.thumbnail.height = THUMB_H;
   }
@@ -140,8 +165,6 @@ export class Engine {
     // Dracula 2: the original renderer skips the last pixel column of each face
     this.faceXScale = game.id === 'dracula2' ? 511 / 512 : 1;
     await platform.loadSaves(game.id);
-    try { this.cursorData = await fetchData(this.url('cursors.js')); }
-    catch (e) { warn((e as Error).message); }
     this.setupInput();
     this.layout();
     window.addEventListener('resize', () => this.layout());
@@ -184,6 +207,7 @@ export class Engine {
     const s = await fetchData<Script>(this.url('scripts/' + name + '.js'));
     this.script = s;
     this.scriptVars = s.vars;
+    this.variants = this.index.variants?.[name] ?? {};
     for (const v of s.vars) this.declare(v);
     this.declare('P_Alliance');
     this.declare('reloaddone');
@@ -398,20 +422,22 @@ export class Engine {
   }
 
   // ------------------------------------------------------------- warps
+  // Dracula 2 missions have their own copies of some files (index.variants).
+  private file(name: string) { const b = baseOf(name); return this.variants[b] ?? b; }
   private async loadVR(name: string): Promise<VrState | null> {
-    const key = stemOf(name);
+    const key = stemOf(this.file(name));
     if (!this.index.vr[key]) return null;
-    let assets: VrAssets;
-    try { assets = await fetchData<VrAssets>(this.url('vr/' + key + '/assets.js')); }
+    const dir = 'vr/' + key + '/';
+    let meta: VrMeta;
+    try { meta = await fetchJson<VrMeta>(this.url(dir + 'meta.json')); }
     catch (e) { warn((e as Error).message); return null; }
-    const meta = assets.meta;
-    const pic = (n: string) => (assets.images[n] ? loadImage(assets.images[n]) : Promise.resolve(null));
+    const pic = (file: string | null) => (file ? loadImage(this.url(dir + file)) : Promise.resolve(null));
     const isVR = meta.type === 'panorama';
     const [imgs, anims] = await Promise.all([
-      Promise.all(isVR ? [0, 1, 2, 3, 4, 5].map((i) => pic('face' + i + '.png')) : [pic('image.png')]),
-      Promise.all((meta.animations || []).map(async (a): Promise<Anim> => ({
+      Promise.all(meta.images.map(pic)),
+      Promise.all(meta.animations.map(async (a): Promise<Anim> => ({
         name: a.name, restart: a.restart_at,
-        frames: await Promise.all((a.patches || []).map(async (p) => ({ img: await pic(p.atlas), blocks: p.blocks }))),
+        frames: await Promise.all(a.patches.map(async (p) => ({ img: await pic(p.atlas), blocks: p.blocks }))),
         active: false, frame: 0, t: 0, speed: 0, stopRequested: false, variable: '', value: 0,
       }))),
     ]);
@@ -441,11 +467,16 @@ export class Engine {
     this.warp = this.script.warps[this.nextWarp];
     this.nextWarp = -1;
     log('warp', this.warp.vr);
+    // Debut.vr is both games' intro (logos, then the opening movies) and ends at the menu
+    if (stemOf(this.warp.vr) === 'debut' && platform.pref('skipIntro', false)) {
+      const menu = this.getWarpIdx('Interface.vr');
+      if (menu >= 0) { this.nextWarp = menu; return; }
+    }
     for (const c of this.cursors[this.warpIdx]) c.hidden = false;
     const vr = await this.loadVR(this.warp.vr);
     if (vr) this.applyVR(vr);
     if (this.warp.test) {
-      const regs = this.index.tests[stemOf(this.warp.test)];
+      const regs = this.index.tests[stemOf(this.file(this.warp.test))];
       if (regs) this.regions = regs;
     }
     const view = this.pendingView;
@@ -505,7 +536,7 @@ export class Engine {
   }
 
   // ---------------------------------------------------------- render
-  /** Sizes the game box. `animate` (the A toggle only, never a window resize) eases the
+  /** Sizes the game box. `animate` (the F3 toggle only, never a window resize) eases the
    *  box between 4:3 and stretched: the frame visibly stretches or pulls back in. */
   layout(animate = false) {
     const vw = window.innerWidth, vh = window.innerHeight;
@@ -564,7 +595,9 @@ export class Engine {
     }
     if (this.imageOverlay) o.drawImage(this.imageOverlay.canvas, this.imageOverlay.x, this.imageOverlay.y);
     this.drawTimer();
-    if (this.showRegions && this.regions) this.drawRegions();
+    if (DEV && this.showRegions && this.regions) {
+      drawRegions(this.octx, this.regions, this.vr.isVR ? this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov) : null);
+    }
     if (this.fade < 0) {
       o.fillStyle = 'rgba(0,0,0,' + clamp(-this.fade / 255, 0, 1) + ')';
       o.fillRect(0, 0, W, H);
@@ -581,13 +614,7 @@ export class Engine {
   // ---------------------------------------------- Dracula 2: .arn archive pictures
   private arnImage(name: string) {
     const k = stemOf(name);
-    if (!this.arnCache.has(k)) {
-      if (!this.arnData) {
-        this.arnData = fetchData<Record<string, string>>(this.url('arn.js'))
-          .catch((e: Error) => { warn(e.message); return {}; });
-      }
-      this.arnCache.set(k, this.arnData.then((d) => (d[k] ? loadImage(d[k]) : null)));
-    }
+    if (!this.arnCache.has(k)) this.arnCache.set(k, loadImage(this.url('arn/' + k + '.webp')));
     return this.arnCache.get(k)!;
   }
   private async showImageOverlay(name: string, x: number, y: number) {
@@ -633,21 +660,6 @@ export class Engine {
     const w = Math.floor(fg.width * (tm.t / tm.initial));
     if (w > 0) o.drawImage(fg, 0, 0, w, fg.height, 177, 15, w, fg.height);
   }
-  private drawRegions() {
-    const o = this.octx, regs = this.regions!;
-    o.strokeStyle = '#ff0';
-    o.lineWidth = 1;
-    if (!this.vr.isVR) {
-      for (const r of regs) o.strokeRect(r[0], r[2], r[1] - r[0], r[3] - r[2]);
-      return;
-    }
-    const cam = this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov);
-    o.fillStyle = 'rgba(255,255,0,0.25)';
-    for (let y = 0; y < H; y += 8) for (let x = 0; x < W; x += 8) {
-      const [a, b] = rayAngles(cam, x + 4, y + 4);
-      if (regs.some((r) => contains3D(r, a, b))) o.fillRect(x, y, 8, 8);
-    }
-  }
   setMessage(text: string, ms = 2500) {
     this.msg.textContent = text;
     this.msg.style.display = 'block';
@@ -658,14 +670,12 @@ export class Engine {
   // ---------------------------------------------------------- cursors
   private loadCursor(name: string): Cursor | null {
     if (!name) return null;
-    const key = stemOf(name);
+    const key = stemOf(this.file(name));
     let c = this.cursorCache.get(key);
     if (!c) {
       const cc: Cursor = { img: null, ox: 0, oy: 0, failed: false };
       this.cursorCache.set(key, cc);
-      const src = this.cursorData[key];
-      if (!src) { cc.failed = true; return null; }
-      void loadImage(src).then((img) => {
+      void loadImage(this.url('cursors/' + key + '.webp')).then((img) => {
         if (!img) { cc.failed = true; return; }
         cc.img = img; cc.ox = Math.floor(img.width / 2); cc.oy = Math.floor(img.height / 2);
       });
@@ -673,8 +683,8 @@ export class Engine {
     }
     return c.img ? c : null;
   }
-  /** Crosshair in the centre: classic mouse or gamepad, in panoramas. */
-  private centered() { return this.vr.isVR && (this.classic || this.pad.active); }
+  /** Crosshair in the centre: classic mouse, in panoramas. */
+  private centered() { return this.vr.isVR && this.classic; }
   private cursorPos() { return this.centered() ? { x: W / 2, y: H / 2 } : { x: this.mouse.x, y: this.mouse.y }; }
   private hitPoint(): [number, number] {
     if (this.vr.isVR) {
@@ -694,16 +704,15 @@ export class Engine {
       return { x: (e.clientX - rect.left) * W / rect.width, y: (e.clientY - rect.top) * H / rect.height };
     };
     ov.addEventListener('mousemove', (e) => {
-      this.pad.active = false;
       if (document.pointerLockElement === ov) {
         if (this.vr.isVR) {
-          this.angleX.add(e.movementX * 0.0035);
-          this.angleY.add(e.movementY * 0.0035);
+          this.angleX.add(e.movementX * 0.0035 * this.sensitivity);
+          this.angleY.add(e.movementY * 0.0035 * this.sensitivity);
         } else {
           // 2D screens (menus, close-ups): the locked mouse moves a virtual cursor
           const rect = ov.getBoundingClientRect();
-          this.mouse.x = clamp(this.mouse.x + e.movementX * W / rect.width, 0, W - 1);
-          this.mouse.y = clamp(this.mouse.y + e.movementY * H / rect.height, 0, H - 1);
+          this.mouse.x = clamp(this.mouse.x + e.movementX * this.sensitivity * W / rect.width, 0, W - 1);
+          this.mouse.y = clamp(this.mouse.y + e.movementY * this.sensitivity * H / rect.height, 0, H - 1);
           this.mouse.inside = true;
         }
         return;
@@ -743,17 +752,28 @@ export class Engine {
       }
     });
     ov.addEventListener('contextmenu', (e) => e.preventDefault());
-    const keyCodes: Record<string, number> = { Escape: 0, Backspace: 0, F1: 1, F2: 2, F3: 3, F4: 4, F5: 5, F6: 6,
-      F7: 7, F8: 8, F9: 9, F10: 10, Enter: 11, Tab: 12 };
+    // F2-F4 and F10 no longer reach the scripts: neither game binds them as a lockkey
+    const keyCodes: Record<string, number> = { Escape: 0, Backspace: 0, F1: 1, F5: 5, F6: 6,
+      F7: 7, F8: 8, F9: 9, Enter: 11, Tab: 12 };
+    const hotkeys: Record<string, () => void> = {
+      F2: () => this.toggleClassic(),
+      F3: () => this.toggleStretch(),
+      F10: () => this.openMenu(),
+      F11: () => platform.toggleFullscreen(),
+    };
+    if (DEV) hotkeys.F4 = () => { this.showRegions = !this.showRegions; };
     window.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') this.lastEscKey = performance.now();
-      if (e.key === 'F11') { e.preventDefault(); platform.toggleFullscreen(); return; }
+      if (this.menu) {
+        // Esc does not count as a user gesture, so it cannot take the pointer lock back
+        if (e.repeat) return;
+        if (e.key === 'Escape') { e.preventDefault(); this.closeMenu(false); }
+        else if (e.key === 'F10') { e.preventDefault(); this.closeMenu(true); }
+        return;
+      }
+      if (e.key in hotkeys) { e.preventDefault(); if (!e.repeat) hotkeys[e.key](); return; }
       if (e.key in keyCodes) { e.preventDefault(); this.events.push({ type: 'key', code: keyCodes[e.key] }); }
       else if (e.key === ' ') { e.preventDefault(); this.events.push({ type: 'skip' }); }
-      else if (e.key === 'h' || e.key === 'H') this.showRegions = !this.showRegions;
-      else if (e.key === 'l' || e.key === 'L') this.toggleClassic();
-      else if (e.key === 'f' || e.key === 'F') platform.toggleFullscreen();
-      else if (e.key === 'a' || e.key === 'A') this.toggleStretch();
       else if (e.key === 'ArrowLeft') this.keyPan = [-1, 0];
       else if (e.key === 'ArrowRight') this.keyPan = [1, 0];
       else if (e.key === 'ArrowUp') this.keyPan = [0, -1];
@@ -778,62 +798,92 @@ export class Engine {
     const r = this.overlay.requestPointerLock() as unknown as Promise<void> | undefined;
     if (r && r.catch) r.catch(() => { this.lockFailed = true; });
   }
-  private toggleClassic() {
-    this.wantClassic = !this.wantClassic;
-    platform.setPref('classic', this.wantClassic);
-    if (this.wantClassic) this.lockPointer();
+  private setClassic(on: boolean) {
+    this.wantClassic = on;
+    platform.setPref('classic', on);
+    if (this.menu) return;   // closing the menu takes the lock back
+    if (on) this.lockPointer();
     else if (document.pointerLockElement) { this.unlockRequested = true; document.exitPointerLock(); }
+  }
+  private toggleClassic() {
+    this.setClassic(!this.wantClassic);
     this.setMessage(this.wantClassic ? UI.classicMouse : UI.freeMouse);
   }
-  private toggleStretch() {
-    this.stretch = !this.stretch;
-    platform.setPref('stretch', this.stretch);
+  private setStretch(on: boolean) {
+    this.stretch = on;
+    platform.setPref('stretch', on);
     this.layout(true);
+  }
+  private toggleStretch() {
+    this.setStretch(!this.stretch);
     this.setMessage(this.stretch ? UI.stretched : UI.original43);
   }
 
-  /* Gamepad (Gamepad API, standard Xbox/PlayStation layout):
-   *   left stick / d-pad: turn the camera (panorama) or move the cursor (2D screens)
-   *   right stick: turn the camera
-   *   A/Cross: click   B/Circle: inventory (right click)   Start: menu (Esc)   Back/Select: skip video
-   *   LB/RB: F1/F2 (game shortcuts)   Y/Triangle: show clickable areas */
-  private pollGamepad(dt: number) {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    let gp: Gamepad | null = null;
-    for (const p of pads) if (p && p.connected) { gp = p; break; }
-    if (!gp) return;
-    const dead = (v: number) => (Math.abs(v) < 0.18 ? 0 : (v - Math.sign(v) * 0.18) / 0.82);
-    const b = gp.buttons.map((x) => x.pressed);
-    const pressed = (i: number) => !!b[i] && !this.pad.buttons[i];
-    let lx = dead(gp.axes[0] || 0), ly = dead(gp.axes[1] || 0);
-    if (b[14]) lx = -1; if (b[15]) lx = 1; if (b[12]) ly = -1; if (b[13]) ly = 1;
-    const rx = dead(gp.axes[2] || 0), ry = dead(gp.axes[3] || 0);
-    const any = lx || ly || rx || ry || b.some((x) => x);
-    if (any) this.pad.active = true;
-    if (this.vr.isVR) {
-      const sx = lx + rx, sy = ly + ry;
-      if (sx) this.angleX.add(sx * 1.8 * dt);
-      if (sy) this.angleY.add(sy * 1.3 * dt);
-    } else if (lx || ly) {
-      this.mouse.x = clamp(this.mouse.x + lx * 420 * dt, 0, W - 1);
-      this.mouse.y = clamp(this.mouse.y + ly * 420 * dt, 0, H - 1);
-      this.mouse.inside = true;
+  private openMenu() {
+    if (this.menu || !this.running) return;
+    if (document.pointerLockElement) { this.unlockRequested = true; document.exitPointerLock(); }
+    this.keyPan = null;
+    this.drag = null;
+    this.holdMedia(true);
+    const ui = this.ui;
+    ui.className = 'menu';
+    ui.replaceChildren(clone('tpl-options'));
+    ui.style.display = '';
+    this.menu = ui;
+    ui.querySelector('.opts')!.prepend(clone('tpl-prefs'));
+    bindSettings(ui, {
+      volume: (v) => this.setVolume(v),
+      sensitivity: (v) => { this.sensitivity = v; },
+      classic: (on) => this.setClassic(on),
+      stretch: (on) => this.setStretch(on),
+    });
+    const input = (name: string) => ui.querySelector<HTMLInputElement>(`input[name=${name}]`)!;
+    const fs = input('fullscreen');
+    fs.onchange = () => platform.setFullscreen(fs.checked);
+    void platform.isFullscreen().then((on) => { fs.checked = on; });
+    ui.querySelector<HTMLButtonElement>('button.resume')!.onclick = () => this.closeMenu(true);
+    input('volume').focus();
+  }
+  private closeMenu(relock: boolean) {
+    if (!this.menu) return;
+    this.menu = null;
+    this.ui.style.display = 'none';
+    this.ui.className = '';
+    this.ui.replaceChildren();
+    this.holdMedia(false);
+    if (relock && this.wantClassic) this.lockPointer();
+  }
+  // Still drawn while paused: a layout change behind the menu clears the WebGL canvas
+  private async hold() {
+    while (this.menu) {
+      this.renderScene(0);
+      this.drawOverlay(null);
+      await nextFrame();
     }
-    if (pressed(0)) this.events.push({ type: 'click' });
-    if (pressed(1)) this.events.push({ type: 'rclick' });
-    if (pressed(9)) this.events.push({ type: 'key', code: 0 });
-    if (pressed(8)) this.events.push({ type: 'skip' });
-    if (pressed(4)) this.events.push({ type: 'key', code: 1 });
-    if (pressed(5)) this.events.push({ type: 'key', code: 2 });
-    if (pressed(3)) this.showRegions = !this.showRegions;
-    this.pad.buttons = b;
+  }
+  // The scripts wait on the movie and one-shot sounds; loops play on so volume can be judged
+  private holdMedia(hold: boolean) {
+    if (!hold) {
+      if (this.heldVideo) this.video.play().catch(() => {});
+      for (const e of this.heldSounds) this.resumeSound(e);
+      this.heldVideo = false;
+      this.heldSounds = [];
+      return;
+    }
+    if (!this.video.paused && !this.video.ended) { this.video.pause(); this.heldVideo = true; }
+    for (const [, e] of this.sounds) if (!this.loops(e) && !e.ended) { this.pauseSound(e); this.heldSounds.push(e); }
+  }
+  private setVolume(v: number) {
+    this.masterVolume = v;
+    this.video.volume = v;
+    this.master.gain.value = v;
   }
 
   private edgePan(dt: number) {
     if (!this.vr.isVR) return;
     let dx = 0, dy = 0;
     if (this.keyPan) { [dx, dy] = this.keyPan; }
-    else if (!this.classic && !this.pad.active && this.mouse.inside && !this.drag) {
+    else if (!this.classic && this.mouse.inside && !this.drag) {
       const m = 14;
       if (this.mouse.x < m) dx = -(m - this.mouse.x) / m;
       else if (this.mouse.x > W - m) dx = (this.mouse.x - (W - m)) / m;
@@ -885,9 +935,9 @@ export class Engine {
     let last = performance.now();
     for (;;) {
       const now = await nextFrame();
+      if (this.menu) { await this.hold(); last = performance.now(); continue; }
       const dt = Math.min((now - last) / 1000, 4 / 60);
       last = now;
-      this.pollGamepad(dt);
       const skip = this.drainEvents();
       if (!fn(dt, skip)) break;
     }
@@ -964,7 +1014,7 @@ export class Engine {
     if (zoom > 0) this.fov = zoom;
   }
   private async playMovie(file: string) {
-    const src = this.url('movie/' + stemOf(file) + '.webm');
+    const src = this.url('movie/' + stemOf(this.file(file)) + '.webm');
     log('movie', src);
     const v = this.video;
     v.src = src;
@@ -976,7 +1026,7 @@ export class Engine {
     try { await v.play(); } catch (e) { warn('video playback failed', src, e); done = true; }
     this.octx.clearRect(0, 0, W, H);
     let clicked = false;
-    const onClick = () => { clicked = true; };
+    const onClick = () => { if (!this.menu) clicked = true; };
     window.addEventListener('mouseup', onClick);
     await this.frameLoop((_dt, skip) => {
       if (skip || clicked || this.events.some((e) => e.type === 'click')) done = true;
@@ -990,22 +1040,60 @@ export class Engine {
   }
 
   // ------------------------------------------------------------ sound
-  private soundUrl(name: string) { return this.url('sound/' + baseOf(name)); }
+  private soundUrl(name: string) { return this.url('sound/' + stemOf(this.file(name)) + '.opus'); }
+  private soundBuffer(url: string) {
+    let b = this.soundCache.get(url);
+    if (!b) {
+      b = fetch(url).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.arrayBuffer(); })
+        .then((d) => this.audio.decodeAudioData(d))
+        .catch(() => { warn('sound not found', url); return null; });
+      this.soundCache.set(url, b);
+    }
+    return b;
+  }
+  private loops(e: SoundEntry) { return e.loops < 0 || e.music; }
   private playSound(name: string, volume: number, loops: number, music: boolean) {
     if (this.sounds.has(name)) return;
-    const a = new Audio(this.soundUrl(name));
-    a.volume = clamp(volume / 255, 0, 1) * this.masterVolume;
-    a.loop = loops < 0 || music;
     if (music) {
       if (this.currentMusic) this.stopSound(this.currentMusic);
       this.currentMusic = name;
       this.currentMusicVolume = volume;
     }
-    const entry: SoundEntry = { audio: a, volume, loops, music, ended: false, stopped: false };
-    a.onended = () => { entry.ended = true; };
-    a.onerror = () => { if (!entry.stopped) { warn('sound not found', name); entry.ended = true; } };
-    a.play().catch(() => {});
-    this.sounds.set(name, entry);
+    const gain = this.audio.createGain();
+    gain.gain.value = clamp(volume / 255, 0, 1);
+    gain.connect(this.master);
+    const e: SoundEntry = { volume, loops, music, gain, buffer: null, source: null, startedAt: 0, offset: 0,
+      paused: false, ended: false, stopped: false };
+    this.sounds.set(name, e);
+    void this.audio.resume();
+    void this.soundBuffer(this.soundUrl(name)).then((buf) => {
+      if (e.stopped) return;
+      if (!buf) { e.ended = true; return; }
+      e.buffer = buf;
+      if (!e.paused) this.startSource(e);
+    });
+  }
+  private startSource(e: SoundEntry) {
+    const src = this.audio.createBufferSource();
+    src.buffer = e.buffer;
+    src.loop = this.loops(e);
+    src.connect(e.gain);
+    src.onended = () => { if (e.source === src) e.ended = true; };
+    e.startedAt = this.audio.currentTime - e.offset;
+    src.start(0, e.offset % e.buffer!.duration);
+    e.source = src;
+  }
+  private pauseSound(e: SoundEntry) {
+    e.paused = true;
+    if (!e.source) return;
+    e.offset = this.audio.currentTime - e.startedAt;
+    const src = e.source;
+    e.source = null;
+    src.stop();
+  }
+  private resumeSound(e: SoundEntry) {
+    e.paused = false;
+    if (e.buffer && !e.stopped && !e.ended) this.startSource(e);
   }
   private stopSound(name: string) {
     if (name === this.currentMusic) this.currentMusic = '';
@@ -1017,13 +1105,12 @@ export class Engine {
     this.sounds.clear();
     this.currentMusic = '';
   }
-  private killAudio(s: SoundEntry) {
-    s.stopped = true;
-    s.audio.onerror = null;
-    s.audio.onended = null;
-    s.audio.pause();
-    s.audio.removeAttribute('src');
-    s.audio.load();
+  private killAudio(e: SoundEntry) {
+    e.stopped = true;
+    const src = e.source;
+    e.source = null;
+    src?.stop();
+    e.gain.disconnect();
   }
   private cleanupSounds() { for (const [n, s] of this.sounds) if (s.ended) this.sounds.delete(n); }
 
@@ -1114,7 +1201,6 @@ export class Engine {
 
   // -------------------------------------------------------------- tick
   private async tick(dt: number) {
-    this.pollGamepad(dt);
     this.tickTimer(dt);
     this.edgePan(dt);
     this.cleanupSounds();
@@ -1162,7 +1248,7 @@ export class Engine {
       if (hoverIndex >= 0) { const t = this.getTest(this.warp, hoverIndex); if (t) await this.execTest(t); }
     }
     if (!cursor) cursor = this.loadCursor(anyMatched ? this.defaultCursor[1] : this.defaultCursor[0]);
-    this.drawOverlay(this.mouse.inside || this.classic || this.pad.active ? cursor : null);
+    this.drawOverlay(this.mouse.inside || this.classic ? cursor : null);
   }
 
   async run(params: URLSearchParams) {
@@ -1173,6 +1259,7 @@ export class Engine {
     let last = performance.now();
     for (;;) {
       const now = await nextFrame();
+      if (this.menu) { await this.hold(); last = performance.now(); continue; }
       const dt = Math.min((now - last) / 1000, 4 / 60);
       last = now;
       try {

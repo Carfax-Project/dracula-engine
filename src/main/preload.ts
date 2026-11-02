@@ -12,6 +12,16 @@ const api: NativeApi = {
   setFullscreen: (on) => ipcRenderer.send('setFullscreen', on),
   isFullscreen: () => ipcRenderer.invoke('isFullscreen'),
   quit: () => ipcRenderer.send('quit'),
+  version: () => ipcRenderer.invoke('version'),
+  importState: () => ipcRenderer.invoke('importState'),
+  importPick: (kind) => ipcRenderer.invoke('importPick', kind),
+  importClear: (kind) => ipcRenderer.invoke('importClear', kind),
+  importStart: () => ipcRenderer.invoke('importStart'),
+  importCancel: () => ipcRenderer.send('importCancel'),
+  onImportProgress: (cb) => {
+    ipcRenderer.removeAllListeners('importProgress');
+    ipcRenderer.on('importProgress', (_e, p) => cb(p));
+  },
 };
 
 contextBridge.exposeInMainWorld('dracula', api);

@@ -8,7 +8,7 @@
 // keeps saves inside that profile). The game data folders are never written.
 // On a headless Linux box run it under xvfb:  xvfb-run -a npm run test:e2e
 import { _electron } from 'playwright-core';
-import { mkdtempSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -66,6 +66,26 @@ try {
     for (let i = 0; i < 4; i++) { await win.keyboard.press('Space'); await win.waitForTimeout(1000); }
     const warp = await win.evaluate(() => window.engine?.warp?.vr || null);
     check(!!warp, `${id}: running, current scene ${warp}`);
+    await win.keyboard.press('F10');
+    await win.waitForTimeout(400);
+    check(await win.isVisible('#ui.menu input[name=volume]'), `${id}: F10 opens the options menu`);
+    await win.evaluate(() => {
+      const el = document.querySelector('#ui.menu input[name=volume]');
+      el.value = '40';
+      el.dispatchEvent(new Event('input'));
+      el.dispatchEvent(new Event('change'));
+    });
+    await win.screenshot({ path: join(shots, `${id}-options.png`) });
+    await win.keyboard.press('Escape');
+    await win.waitForTimeout(400);
+    check(!(await win.isVisible('#ui.menu')), `${id}: Esc closes the options menu`);
+    let prefs = {};
+    try { prefs = JSON.parse(readFileSync(join(profile, 'prefs.json'), 'utf8')); } catch { /* missing */ }
+    check(prefs.volume === 0.4, `${id}: volume stored in prefs.json`);
+    await win.keyboard.press('F3');
+    await win.waitForTimeout(300);
+    check(!(await win.evaluate(() => window.engine.stretch)), `${id}: F3 toggles stretch`);
+    await win.keyboard.press('F3');
     await win.evaluate(async () => { const e = window.engine; e.captureContext(); e.saveThumbnail(); await e.saveGame(7); });
     await win.screenshot({ path: join(shots, `${id}.png`) });
     await app.close();

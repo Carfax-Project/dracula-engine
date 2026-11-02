@@ -9,7 +9,7 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
   #box { position: relative; z-index: 1; background: #000; width: 100vw; height: 100vh; }
-  /* the A toggle eases between 4:3 and stretched (LAYOUT_EASE_MS in engine.ts) */
+  /* the F3 toggle eases between 4:3 and stretched (LAYOUT_EASE_MS in engine.ts) */
   #box.easing { transition: width .45s cubic-bezier(.22,.7,.26,1), height .45s cubic-bezier(.22,.7,.26,1); }
   /* 4:3 mode: the bars show the current frame, blurred and dark (backdrop.ts).
      Scaled up a little so the blur never fades to black at the window edges. */
@@ -38,55 +38,66 @@
   #ui .game { position: relative; flex: 1 1 0; min-width: 0; overflow: hidden; cursor: pointer; outline: none;
               transition: flex-grow .55s cubic-bezier(.22,.7,.26,1); }
   #ui .game + .game { border-left: 1px solid #1c1512; }
+  #ui .game img { position: absolute; inset: 0; width: 100%; height: 100%; }
   /* contain, never cover: the box art is shown whole, never cropped */
-  #ui .game img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain;
-                  filter: grayscale(1) brightness(.5) contrast(1.05);
-                  transition: filter .55s cubic-bezier(.22,.7,.26,1); }
+  #ui .game img.art { object-fit: contain; filter: grayscale(.5) brightness(.72) contrast(1.02);
+                      transition: filter .55s cubic-bezier(.22,.7,.26,1); }
+  /* animate opacity only: animating a blur is costly */
+  #ui .game img.blur { object-fit: cover; transform: scale(1.15); filter: blur(36px) brightness(.62) saturate(1.3);
+                       opacity: .75; transition: opacity .55s cubic-bezier(.22,.7,.26,1); }
   #ui .game .edge { position: absolute; inset: 0; z-index: 1; pointer-events: none;
                     box-shadow: inset 0 0 0 0 rgba(138,59,43,0); transition: box-shadow .55s cubic-bezier(.22,.7,.26,1); }
   /* a soft fade keeps the caption readable where the art reaches the bottom */
-  #ui .caption { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 70px 24px 38px;
+  #ui .caption { position: absolute; left: 0; right: 0; bottom: 0; z-index: 2; padding: 70px 24px 44px;
                  text-align: center; pointer-events: none;
                  background: linear-gradient(to top, rgba(0,0,0,.88), rgba(0,0,0,.55) 45%, rgba(0,0,0,0)); }
-  #ui .caption .name { font-family: Georgia, serif; font-size: 25px; letter-spacing: .05em; color: #9c917c;
+  #ui .caption .name { font-family: Georgia, serif; font-size: 25px; letter-spacing: .05em; color: #bfb39a;
                        transition: color .55s cubic-bezier(.22,.7,.26,1); }
   #ui .caption .go { margin-top: 9px; font-size: 12px; letter-spacing: .22em; text-transform: uppercase;
                      color: #c2714f; opacity: 0; transform: translateY(8px);
                      transition: opacity .55s cubic-bezier(.22,.7,.26,1), transform .55s cubic-bezier(.22,.7,.26,1); }
-  #ui .games:hover .game:hover, #ui .game:focus-visible { flex-grow: 1.45; }
-  #ui .games:hover .game:not(:hover) { flex-grow: .75; }
-  #ui .game:hover img, #ui .game:focus-visible img { filter: grayscale(0) brightness(1.02) contrast(1); }
-  #ui .games:hover .game:not(:hover) img { filter: grayscale(1) brightness(.3); }
-  #ui .game:hover .edge, #ui .game:focus-visible .edge {
-    box-shadow: inset 0 0 0 2px rgba(138,59,43,.75), inset 0 0 90px rgba(120,20,15,.4); }
-  #ui .game:hover .caption .name, #ui .game:focus-visible .caption .name { color: #e8d9b4; }
-  #ui .game:hover .caption .go, #ui .game:focus-visible .caption .go { opacity: 1; transform: none; }
+  #ui .games.picking .game.sel { flex-grow: 1.45; }
+  #ui .games.picking .game:not(.sel) { flex-grow: .75; }
+  #ui .game.sel img.art { filter: none; }
+  #ui .game.sel img.blur { opacity: 1; }
+  #ui .games.picking .game:not(.sel) img.art { filter: grayscale(1) brightness(.3); }
+  #ui .games.picking .game:not(.sel) img.blur { opacity: .3; }
+  #ui .game.sel .edge { box-shadow: inset 0 0 0 2px rgba(138,59,43,.75), inset 0 0 90px rgba(120,20,15,.4); }
+  #ui .game.sel .caption .name { color: #e8d9b4; }
+  #ui .game.sel .caption .go { opacity: 1; transform: none; }
 
-  /* game without data: the cover stays dark and does not react. The gear is the
-     only way in, so it brightens when nothing was detected. */
   #ui .game.unset { cursor: default; }
-  #ui .game.unset img { filter: grayscale(1) brightness(.16) !important; }
-  #ui .game.unset:hover, #ui .game.unset:focus-visible { flex-grow: 1 !important; }
-  #ui .game.unset .edge { box-shadow: none !important; }
+  #ui .game.unset img.art { filter: grayscale(1) brightness(.16) !important; }
+  #ui .game.unset img.blur { opacity: .12 !important; }
   #ui .game.unset .caption .name { color: #6d6457; }
   #ui .game.unset .caption .go { visibility: hidden; }   /* keeps both captions on one baseline */
 
-  #ui .corner { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; gap: 2px;
-                align-items: center; }   /* the two glyphs differ in size */
-  #ui .corner button { margin: 0; background: none; border: none; color: #6b6355; line-height: 1;
-                       padding: 7px 9px; opacity: .5; cursor: pointer;
-                       transition: opacity .3s ease, color .3s ease, transform .4s ease; }
-  #ui button.gear { font-size: 21px; }
-  #ui button.quit { font-size: 17px; }
-  #ui .corner button:hover, #ui .corner button:focus-visible { opacity: 1; }
-  #ui button.gear:hover, #ui button.gear:focus-visible { color: #e8d9b4; transform: rotate(45deg); }
-  #ui button.quit:hover, #ui button.quit:focus-visible { color: #c2553f; }
-  #ui.nothing button.gear { opacity: 1; color: #c2714f; }
+  #ui .keyhint { position: absolute; left: 0; right: 0; bottom: 14px; z-index: 3; pointer-events: none;
+                 text-align: center; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: #7d7364; }
+  #ui.nothing .keyhint { display: none; }
+
+  #ui .corner { position: absolute; top: 14px; right: 14px; z-index: 5; display: flex; gap: 8px; }
+  #ui .corner button { display: flex; align-items: center; gap: 0; margin: 0; padding: 8px 12px; line-height: 1;
+                       background: rgba(10,7,6,.6); border: 1px solid rgba(138,59,43,.4); border-radius: 20px;
+                       color: #cfc1a2; cursor: pointer;
+                       transition: gap .3s ease, color .3s ease, background .3s ease, border-color .3s ease; }
+  #ui .corner .glyph { display: inline-block; transition: transform .4s ease; }
+  #ui button.gear .glyph { font-size: 19px; }
+  #ui button.quit .glyph { font-size: 15px; }
+  #ui .corner .label { max-width: 0; overflow: hidden; white-space: nowrap; opacity: 0; font-size: 12px;
+                       letter-spacing: .08em; transition: max-width .35s ease, opacity .3s ease; }
+  #ui .corner button:hover, #ui .corner button:focus-visible {
+    gap: 8px; color: #f1e3c2; background: rgba(40,14,12,.8); border-color: rgba(194,113,79,.75); outline: none; }
+  #ui .corner button:hover .label, #ui .corner button:focus-visible .label { max-width: 140px; opacity: 1; }
+  #ui button.gear:hover .glyph, #ui button.gear:focus-visible .glyph { transform: rotate(45deg); }
+  #ui button.quit:hover, #ui button.quit:focus-visible { color: #e07a62; }
+  #ui.nothing button.gear { gap: 8px; color: #f1e3c2; background: rgba(90,20,20,.8); border-color: #c2714f; }
+  #ui.nothing button.gear .label { max-width: 140px; opacity: 1; }
 
   /* ---- settings sheet -------------------------------------------------- */
   #ui .scrim { position: absolute; inset: 0; z-index: 10; background: rgba(0,0,0,.72);
                display: flex; align-items: center; justify-content: center; padding: 24px; box-sizing: border-box; }
-  #ui .sheet { width: 520px; max-width: 100%; box-sizing: border-box; text-align: left;
+  #ui .sheet { width: 520px; max-width: 100%; max-height: 100%; overflow-y: auto; box-sizing: border-box; text-align: left;
                background: #120d0c; border: 1px solid #4a3127; padding: 26px 28px 22px;
                box-shadow: 0 24px 70px rgba(0,0,0,.85); }
   #ui .sheet h2 { font-family: Georgia, serif; font-weight: normal; font-size: 21px; letter-spacing: .06em;
@@ -94,7 +105,8 @@
   #ui .sheet p.lead { margin: 0 0 18px; font-size: 12.5px; line-height: 1.6; color: #9c917c; max-width: none; }
   #ui .sheet .where { background: #0a0706; border: 1px solid #2e211c; padding: 10px 12px; margin-bottom: 16px; }
   #ui .sheet .path { font-family: ui-monospace, monospace; font-size: 11.5px; color: #bfb39a; word-break: break-all; }
-  #ui .sheet ul.found { list-style: none; margin: 0 0 20px; padding: 0; }
+  #ui .sheet ul.found { list-style: none; margin: 0 0 12px; padding: 0; }
+  #ui .sheet .row.pick-row { justify-content: flex-start; margin-bottom: 22px; }
   #ui .sheet ul.found li { display: flex; gap: 10px; align-items: baseline; padding: 7px 0;
                            border-top: 1px solid #241a16; font-size: 13px; }
   #ui .sheet ul.found li .mark { width: 14px; flex: none; text-align: center; font-size: 12px; }
@@ -105,9 +117,50 @@
   #ui .sheet ul.found li .gname { color: #d8c9a3; }
   #ui .sheet ul.found li .gwhere { color: #8f8573; font-size: 11.5px; }
   #ui .sheet .row { justify-content: flex-end; }
+  #ui .sheet .row.pick-row { gap: 10px; }
+  #ui .sheet.import { width: 600px; }
+  #ui .sheet .pickline { display: flex; gap: 8px; align-items: stretch; }
+  #ui .sheet .pickline .where { flex: 1; min-width: 0; margin: 0; }
+  #ui .sheet .pickline button { padding: 6px 14px; font-size: 13px; }
+  #ui .sheet p.note { margin: 6px 0 16px; min-height: 1em; font-size: 11.5px; color: #8f8573; }
+  #ui .sheet p.note.ok { color: #7fa36a; }
+  #ui .sheet p.note.bad { color: #c2714f; }
+  #ui .sheet .opt-tag { font-size: 10px; letter-spacing: .12em; color: #6d6457; margin-left: 6px; }
+  #ui .sheet .progress { margin: 4px 0 16px; }
+  #ui .sheet .progress .stage { display: flex; justify-content: space-between; font-size: 12.5px; color: #d8c9a3; margin-bottom: 8px; }
+  #ui .sheet .progress .count { color: #9c917c; font-variant-numeric: tabular-nums; }
+  #ui .sheet .progress .bar { height: 6px; background: #0a0706; border: 1px solid #2e211c; }
+  #ui .sheet .progress .bar > div { height: 100%; width: 0; background: #8a3b2b; transition: width .3s ease; }
+  #ui .sheet p.msg { margin: 0 0 16px; font-size: 12.5px; line-height: 1.5; color: #d8c9a3; }
+  #ui .sheet p.msg:empty { display: none; }
+  #ui .sheet button:disabled { opacity: .45; cursor: default; }
   #ui .sheet button { margin: 0; padding: 9px 20px; font-size: 14px; }
   #ui button.sec { background: transparent; border-color: #6a4a3a; color: #d8c9a3; }
   #ui button.sec:hover { background: rgba(120,40,30,.35); }
+
+  #ui.menu { background: rgba(0,0,0,.55); }
+  #ui .sheet .opts { margin: 6px 0 20px; }
+  #ui .sheet .opt { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-top: 1px solid #241a16;
+                    font-size: 13px; color: #d8c9a3; cursor: pointer; }
+  #ui .sheet .opt > span { flex: 1; }
+  #ui .sheet .opt input { margin: 0; accent-color: #8a3b2b; cursor: pointer; }
+  #ui .sheet .opt input:focus-visible { outline: 1px solid #c2714f; outline-offset: 3px; }
+  #ui .sheet .opt input[type=range] { flex: 0 0 150px; min-width: 0; }
+  #ui .sheet .opt output { width: 46px; text-align: right; font-size: 12px; color: #9c917c;
+                           font-variant-numeric: tabular-nums; }
+  #ui .sheet kbd { font-family: ui-monospace, monospace; font-size: 11px; color: #9c917c;
+                   border: 1px solid #3a2a22; padding: 1px 6px; }
+  #ui .sheet .row { align-items: center; }
+  #ui .sheet .hint { flex: 1; font-size: 11.5px; color: #6d6457; }
+  #ui .sheet.options { width: 900px; }
+  #ui .sheet .cols { display: grid; grid-template-columns: 1fr 1fr; column-gap: 36px; }
+  #ui .sheet h3 { font-family: Georgia, serif; font-weight: normal; font-size: 13px; letter-spacing: .1em;
+                  text-transform: uppercase; color: #9c917c; margin: 6px 0 4px; }
+  #ui .sheet .keys { display: grid; grid-template-columns: 1fr auto; column-gap: 16px; margin: 0 0 20px;
+                     font-size: 13px; color: #d8c9a3; }
+  #ui .sheet .keys > span { display: flex; gap: 4px; align-items: center; padding: 8px 0;
+                            border-top: 1px solid #241a16; }
+  @media (max-width: 860px) { #ui .sheet .cols { grid-template-columns: 1fr; } }
   #msg { position: absolute; left: 8px; bottom: 8px; color: #e6d7b0; font-size: 12px; background: rgba(0,0,0,.6);
          padding: 3px 8px; pointer-events: none; display: none; }
 </style>
@@ -131,14 +184,16 @@
 <template id="tpl-start">
   <div class="games"></div>
   <div class="corner">
-    <button class="gear" title="Game data" aria-label="Game data">⚙</button>
-    <button class="quit" title="Quit" aria-label="Quit">✕</button>
+    <button class="gear" aria-label="Settings"><span class="glyph">⚙</span><span class="label">Settings</span></button>
+    <button class="quit" aria-label="Quit"><span class="glyph">✕</span><span class="label">Quit</span></button>
   </div>
+  <div class="keyhint">← → choose · Enter play</div>
 </template>
 
 <template id="tpl-game">
   <div class="game" role="button" tabindex="0">
-    <img alt="">
+    <img class="blur" alt="">
+    <img class="art" alt="">
     <div class="edge"></div>
     <div class="caption">
       <div class="name"></div>
@@ -148,14 +203,96 @@
 </template>
 
 <template id="tpl-settings">
-  <div class="sheet" role="dialog" aria-modal="true" aria-label="Game data">
-    <h2>Game data</h2>
+  <div class="sheet" role="dialog" aria-modal="true" aria-label="Settings">
+    <h2>Settings</h2>
+    <h3>Game data</h3>
     <p class="lead">One folder holding both games. Each game is detected on its own,
       so a folder with only one of them works too.</p>
     <div class="where"><span class="path"></span></div>
     <ul class="found"></ul>
-    <div class="row">
+    <div class="row pick-row">
       <button class="pick" data-choose>Choose folder…</button>
+      <button class="sec import" data-import>Import from game files…</button>
+    </div>
+    <h3>Play</h3>
+    <div class="opts"></div>
+    <div class="row">
+      <span class="hint">Dracula Engine <span data-version></span></span>
+      <button class="sec close">Close</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-prefs">
+  <label class="opt"><span>Volume</span>
+    <input type="range" name="volume" min="0" max="100" step="1"><output></output></label>
+  <label class="opt"><span>Mouse sensitivity (classic mouse)</span>
+    <input type="range" name="sensitivity" min="25" max="300" step="5"><output></output></label>
+  <label class="opt"><input type="checkbox" name="classic"><span>Classic mouse</span></label>
+  <label class="opt"><input type="checkbox" name="stretch"><span>Stretch to the window</span></label>
+  <label class="opt"><input type="checkbox" name="skipIntro"><span>Skip the intro and start at the menu</span></label>
+</template>
+
+<template id="tpl-options">
+  <div class="sheet options" role="dialog" aria-modal="true" aria-label="Options">
+    <h2>Options</h2>
+    <div class="cols">
+    <div>
+    <h3>Settings</h3>
+    <div class="opts">
+      <label class="opt"><input type="checkbox" name="fullscreen"><span>Fullscreen</span></label>
+    </div>
+    </div>
+    <div>
+    <h3>Controls</h3>
+    <div class="keys">
+      <span>Look around</span><span><kbd>Mouse</kbd><kbd>Arrows</kbd></span>
+      <span>Act</span><span><kbd>Left click</kbd></span>
+      <span>Inventory</span><span><kbd>Right click</kbd><kbd>Tab</kbd></span>
+      <span>Game menu</span><span><kbd>Esc</kbd></span>
+      <span>Skip video</span><span><kbd>Space</kbd><kbd>Esc</kbd></span>
+      <span>Classic / free mouse</span><span><kbd>F2</kbd></span>
+      <span>Stretched / 4:3</span><span><kbd>F3</kbd></span>
+      <span>Options</span><span><kbd>F10</kbd></span>
+      <span>Fullscreen</span><span><kbd>F11</kbd></span>
+    </div>
+    </div>
+    </div>
+    <div class="row">
+      <span class="hint">F10 or Esc to resume</span>
+      <button class="resume">Resume</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-import">
+  <div class="sheet import" role="dialog" aria-modal="true" aria-label="Import a game">
+    <h2>Import a game</h2>
+    <p class="lead">Point to an installed copy of Dracula: The Resurrection or Dracula 2 (the GOG
+      version, for example). It is converted once into a new folder the app plays from; the
+      installed game is never changed. This takes a while, mostly for the movies.</p>
+    <div class="form">
+      <h3>Game files</h3>
+      <div class="pickline"><div class="where"><span class="path" data-path="game"></span></div>
+        <button class="sec" data-pick="game">Choose…</button></div>
+      <p class="note" data-note="game"></p>
+      <h3>Translation <span class="opt-tag">optional</span></h3>
+      <div class="pickline"><div class="where"><span class="path" data-path="overlay"></span></div>
+        <button class="sec" data-pick="overlay">Choose…</button><button class="sec" data-clear="overlay">Clear</button></div>
+      <p class="note">A folder whose files replace the game's ones with the same name, such as a dubbed CD.</p>
+      <h3>Save to</h3>
+      <div class="pickline"><div class="where"><span class="path" data-path="dest"></span></div>
+        <button class="sec" data-pick="dest">Choose…</button></div>
+      <p class="note" data-note="dest"></p>
+    </div>
+    <div class="progress" hidden>
+      <div class="stage"><span class="label"></span><span class="count"></span></div>
+      <div class="bar"><div></div></div>
+    </div>
+    <p class="msg"></p>
+    <div class="row">
+      <button class="start">Import</button>
+      <button class="sec stop" hidden>Stop</button>
       <button class="sec close">Close</button>
     </div>
   </div>

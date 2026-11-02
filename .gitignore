@@ -24,7 +24,7 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
-.claude/settings.local.json
+.claude/
 
 # Environment
 .env

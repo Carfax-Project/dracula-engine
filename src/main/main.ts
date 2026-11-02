@@ -6,11 +6,12 @@
  *    every launch.
  *  - Saves and preferences are plain JSON files (see savesDir()).
  */
-import { app, BrowserWindow, dialog, ipcMain, protocol } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, protocol, utilityProcess, type UtilityProcess } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import type { GameEntry, GameId } from '../shared/format';
+import { findGame } from '../importer/files';
+import { DATA_FORMAT, type GameEntry, type GameId, type ImportResult, type ImportState } from '../shared/format';
 import { UI } from '../shared/strings';
 
 const GAME_IDS: readonly GameId[] = ['dracula1', 'dracula2'];
@@ -43,8 +44,8 @@ function writeAtomic(file: string, text: string) {
 
 // ------------------------------------------------------------ game folders
 
-/** Reads the game id from a data folder's index.js (null if it is not a data folder). */
-function gameIdOf(dir: string): GameId | null {
+/** Reads the game id and data format from a data folder's index.js (null if it is not a data folder). */
+function gameOf(dir: string): { id: GameId; format: number } | null {
   try {
     const fd = fs.openSync(path.join(dir, 'index.js'), 'r');
     const buf = Buffer.alloc(512);
@@ -54,16 +55,17 @@ function gameIdOf(dir: string): GameId | null {
     if (!head.startsWith('__dracula.put(')) return null;
     const m = /"manifest":\{[^}]*"game":"(\w+)"/.exec(head);
     const id = m ? m[1] : 'dracula1';   // early Dracula 1 conversions have no "game" field
-    return isGameId(id) ? id : null;
+    const f = /"manifest":\{[^}]*"format":(\d+)/.exec(head);
+    return isGameId(id) ? { id, format: f ? Number(f[1]) : 1 } : null;
   } catch { return null; }
 }
 
 /** Accepts the data folder itself or a parent holding it (data/, data2/ or any direct subfolder). */
 function locate(dir: string, id: GameId): string | null {
-  if (gameIdOf(dir) === id) return dir;
+  if (gameOf(dir)?.id === id) return dir;
   let subs: string[] = [];
-  try { subs = fs.readdirSync(dir).sort(); } catch { return null; }   // gameIdOf() also skips non-folders and follows symlinks
-  for (const s of subs) if (gameIdOf(path.join(dir, s)) === id) return path.join(dir, s);
+  try { subs = fs.readdirSync(dir).sort(); } catch { return null; }   // gameOf() also skips non-folders and follows symlinks
+  for (const s of subs) if (gameOf(path.join(dir, s))?.id === id) return path.join(dir, s);
   return null;
 }
 
@@ -71,7 +73,9 @@ function entry(id: GameId, cfg = readConfig()): GameEntry {
   const p = cfg.games?.[id] ?? null;
   if (!p) return { id, path: null, status: 'unset', base: null };
   if (!fs.existsSync(p)) return { id, path: p, status: 'missing', base: null };
-  if (gameIdOf(p) !== id) return { id, path: p, status: 'invalid', base: null };
+  const g = gameOf(p);
+  if (g?.id !== id) return { id, path: p, status: 'invalid', base: null };
+  if (g.format !== DATA_FORMAT) return { id, path: p, status: 'outdated', base: null };
   return { id, path: p, status: 'ok', base: `game://${id}/` };
 }
 
@@ -93,6 +97,16 @@ function savesDir(id: GameId): string {
 }
 const prefsFile = () => path.join(app.getPath('userData'), 'prefs.json');
 
+// Where imports go unless the user picks a folder: local app data, which is never
+// synced (unlike %APPDATA% or a OneDrive Documents folder). A test profile keeps them
+// inside the profile.
+function defaultGamesDir() {
+  if (process.env.DRACULA_USER_DATA) return path.join(app.getPath('userData'), 'games');
+  const home = app.getPath('home');
+  if (process.platform === 'win32') return path.join(process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'), 'Dracula', 'Games');
+  return path.join(process.env.XDG_DATA_HOME || path.join(home, '.local', 'share'), 'Dracula', 'games');
+}
+
 // --------------------------------------------------------------- protocol
 
 const MIME: Record<string, string> = {
@@ -101,6 +115,10 @@ const MIME: Record<string, string> = {
   '.jpg': 'image/jpeg', '.mp4': 'video/mp4', '.ogg': 'audio/ogg', '.opus': 'audio/ogg', '.wav': 'audio/wav',
   '.webm': 'video/webm',
 };
+
+// Game data is another origin than the page; without this, canvases drawn from its images
+// cannot be read back (save thumbnails, .arn overlays).
+const CORS = { 'Access-Control-Allow-Origin': 'game://app' };
 
 async function serveFile(file: string, req: Request): Promise<Response> {
   let st: fs.Stats;
@@ -114,12 +132,12 @@ async function serveFile(file: string, req: Request): Promise<Response> {
     start = Math.max(0, start); end = Math.min(end, st.size - 1);
     if (start > end) return new Response(null, { status: 416, headers: { 'Content-Range': `bytes */${st.size}` } });
     const body = Readable.toWeb(fs.createReadStream(file, { start, end })) as unknown as ReadableStream;
-    return new Response(body, { status: 206, headers: {
+    return new Response(body, { status: 206, headers: { ...CORS,
       'Content-Type': type, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes',
       'Content-Range': `bytes ${start}-${end}/${st.size}` } });
   }
   const body = Readable.toWeb(fs.createReadStream(file)) as unknown as ReadableStream;
-  return new Response(body, { status: 200, headers: {
+  return new Response(body, { status: 200, headers: { ...CORS,
     'Content-Type': type, 'Content-Length': String(st.size), 'Accept-Ranges': 'bytes' } });
 }
 
@@ -198,9 +216,64 @@ function setupIpc(win: () => BrowserWindow | null) {
     try { writeAtomic(prefsFile(), JSON.stringify(prefs, null, 2)); } catch (e) { console.error(e); }
   });
 
+  // The renderer never passes paths: it asks for a dialog, and main keeps what was picked.
+  const picks: { game?: { path: string; id: GameId }; overlay?: string; dest?: string } = {};
+  let importer: UtilityProcess | null = null;
+  const pickTitles = { game: UI.importGameDialog, overlay: UI.importOverlayDialog, dest: UI.importDestDialog };
+
+  ipcMain.handle('importState', (): ImportState => {
+    const dest = picks.dest ?? readConfig().root ?? defaultGamesDir();
+    const target = picks.game && dest ? path.join(dest, picks.game.id) : null;
+    return { game: picks.game ?? null, overlay: picks.overlay ?? null, dest, target };
+  });
+  ipcMain.handle('importPick', async (_e, kind: unknown) => {
+    if (kind !== 'game' && kind !== 'overlay' && kind !== 'dest') return { cancelled: true };
+    const w = win();
+    const opts: Electron.OpenDialogOptions = { title: pickTitles[kind], properties: ['openDirectory', 'createDirectory'] };
+    const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
+    if (r.canceled || !r.filePaths[0]) return { cancelled: true };
+    const dir = r.filePaths[0];
+    if (kind === 'game') {
+      const id = findGame(dir);
+      if (!id) return { error: UI.importNotAGame };
+      picks.game = { path: dir, id };
+    } else picks[kind] = dir;
+    return { ok: true };
+  });
+  ipcMain.handle('importClear', (_e, kind: unknown) => { if (kind === 'overlay') delete picks.overlay; });
+  ipcMain.on('importCancel', () => importer?.postMessage({ type: 'cancel' }));
+
+  // Written to <dest>/<game>.partial (an interrupted import resumes there) and renamed
+  // once complete, so a half-converted folder never looks like a game.
+  ipcMain.handle('importStart', () => new Promise<ImportResult>((resolve) => {
+    const game = picks.game, dest = picks.dest ?? readConfig().root ?? defaultGamesDir();
+    if (importer) return resolve({ error: UI.importBusy });
+    if (!game || !dest) return resolve({ error: UI.importIncomplete });
+    const target = path.join(dest, game.id), out = target + '.partial';
+    if (fs.existsSync(target)) return resolve({ error: UI.importExists(target) });
+    const child = utilityProcess.fork(path.join(__dirname, 'import-worker.js'), [], { serviceName: 'Dracula importer' });
+    importer = child;
+    const finish = (r: ImportResult) => { importer = null; child.kill(); resolve(r); };
+    child.on('message', (m) => {
+      if (m.type === 'progress') win()?.webContents.send('importProgress', { stage: m.stage, done: m.done, total: m.total });
+      else if (m.type === 'log') console.log('[import]', m.message);
+      else if (m.type === 'cancelled') finish({ cancelled: true });
+      else if (m.type === 'error') finish({ error: m.message });
+      else if (m.type === 'done') {
+        try { fs.renameSync(out, target); } catch (e) { return finish({ error: (e as Error).message }); }
+        const cfg = readConfig();
+        writeConfig({ root: cfg.root ?? dest, games: { ...cfg.games, [game.id]: target } });
+        finish({ ok: true, game: game.id });
+      }
+    });
+    child.on('exit', (code) => { if (importer === child) finish({ error: UI.importCrashed(code) }); });
+    child.postMessage({ type: 'start', game: game.path, out, overlays: picks.overlay ? [picks.overlay] : [] });
+  }));
+
   ipcMain.on('setFullscreen', (_e, on: boolean) => win()?.setFullScreen(!!on));
   ipcMain.handle('isFullscreen', () => !!win()?.isFullScreen());
   ipcMain.on('quit', () => app.quit());
+  ipcMain.handle('version', () => app.getVersion());
 }
 
 // ----------------------------------------------------------------- window

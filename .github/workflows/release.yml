@@ -23,6 +23,7 @@ jobs:
           [ "$GITHUB_REF_NAME" = "v$version" ] || { echo "::error::tag $GITHUB_REF_NAME, package.json $version"; exit 1; }
 
   build:
+    name: build (${{ matrix.os }})
     needs: check
     if: ${{ !cancelled() && needs.check.result != 'failure' }}
     strategy:

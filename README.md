@@ -9,13 +9,11 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/main-menu.gif" width="760" alt="Start screen">
+  <img src="docs/images/main-menu.webp" width="760" alt="Start screen">
 </p>
 
 <p align="center">
-  <img src="docs/images/crypt.jpg" width="250" alt="Dracula: The Resurrection">
-  <img src="docs/images/cathedral.jpg" width="250" alt="Dracula: The Resurrection">
-  <img src="docs/images/chains.jpg" width="250" alt="Dracula 2: The Last Sanctuary">
+  <img src="docs/images/scenes.webp" width="760" alt="Looking around a graveyard and a mine in Dracula: The Resurrection and a hall in Dracula 2: The Last Sanctuary">
 </p>
 
 ## Features
@@ -23,24 +21,29 @@
 - **Both games, one app** — pick a folder once and both are found on their own
 - **Imports straight from the installed game** — no extra tools, and the original files are never touched
 - **Smooth 360° panoramas** rendered with WebGL, at any window size
-- **Classic or free mouse** — the original crosshair look, or drag to look around
+- **Original or free-cursor mouse** — the mouse turns the view as in the original, or drag to look around
 - **Skip the intro** if you like, and go straight to the menu
-- **Fullscreen in one click**, stretched or in the original 4:3 with a blurred ambient fill
+- **Fullscreen in one click**, filling the screen or in the original 4:3 with a blurred ambient fill
 - **Linux AppImage or `.deb`**, and a **Windows installer** that needs no admin rights
 
 ## Controls
 
-| | Keyboard / mouse |
-|---|---|
-| Look around | mouse / arrows |
-| Act | left click |
-| Inventory | right click / `Tab` |
-| Menu | `Esc` |
-| Skip video | `Space` / `Esc` |
-| Classic / free mouse | `F2` |
-| Stretched / 4:3 | `F3` |
-| Options (volume, mouse, display) | `F10` |
-| Fullscreen | `F11` |
+<p align="center">
+  <img src="docs/images/options.webp" width="760" alt="The options menu, switching the aspect ratio between Fill screen and Original 4:3">
+</p>
+
+<table align="center">
+  <tr><th></th><th>Keyboard / mouse</th></tr>
+  <tr><td>Look around</td><td>mouse / arrows</td></tr>
+  <tr><td>Act</td><td>left click</td></tr>
+  <tr><td>Inventory</td><td>right click / <code>Tab</code></td></tr>
+  <tr><td>Menu</td><td><code>Esc</code></td></tr>
+  <tr><td>Skip video</td><td><code>Space</code> / <code>Esc</code></td></tr>
+  <tr><td>Mouse mode</td><td><code>F2</code></td></tr>
+  <tr><td>Aspect ratio</td><td><code>F3</code></td></tr>
+  <tr><td>Options (volume, mouse, display)</td><td><code>F10</code></td></tr>
+  <tr><td>Fullscreen</td><td><code>F11</code></td></tr>
+</table>
 
 ## Run it
 

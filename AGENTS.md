@@ -215,8 +215,7 @@ JavaScript of the form `__dracula.put("kind","key",<json>);` (a leftover from th
 runtime, which loaded them with `<script>` tags); this app fetches them and parses the
 JSON part (`fetchData`). Everything else is plain files in three formats: every image
 is WebP (faces and screens lossy at quality 95; atlases, cursors and `.arn` pictures
-lossless), sounds are Ogg Opus, movies WebM. Lossy WebP is always 4:2:0, which costs
-~3.5 dB against a 4:4:4 JPEG of the same size; chosen anyway for one image format.
+lossless), sounds are Ogg Opus, movies WebM.
 
 ```
 index.js             { manifest: { format: 3, game, title?, scripts[], start, arn? }, vr: {name: {type, anims}}, tests: {name: Region[]},
@@ -239,8 +238,9 @@ regions, sounds, cursors, movies). Without it, one mission gets the other's file
 (e.g. the notebook has 4 click regions in mission 1, where the 4th turns the page,
 and 3 in mission 2). Folders converted by `dracula-port` have no variants.
 
-Format 1 had every image as base64 inside `.js` files; format 2 had plain JPEG/PNG
-images and WAV sounds. Only the importer writes format 3.
+Only the importer writes format 3. A change to the data format bumps `DATA_FORMAT`;
+folders in the old format are then reported as outdated and converted again, not
+supported side by side.
 
 The script command set (`op` values) is defined by `dracula-port/tools/scripts/lst2json.py`
 and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
@@ -286,9 +286,8 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
 - **Options menu (`F10`).** `tpl-options`, shown on the `#ui` layer as `#ui.menu`:
   the `tpl-prefs` rows (volume, mouse sensitivity, classic mouse, stretch, skip
   intro; wired by `bindSettings` with live hooks) plus fullscreen, next to the
-  Controls list. Every
-  shortcut lives only in that list, never on the setting rows; keep it, the
-  README's Controls table and the key handlers in step.
+  Controls list. Every shortcut lives only in that list, never on the setting rows;
+  keep it, the README's Controls table and the key handlers in step.
   While it is open the game holds still: the main loop and every `frameLoop` sit in
   `hold()`, which keeps drawing the scene (a layout change clears the WebGL canvas)
   but advances no time, and the movie and one-shot sounds are paused (scripts wait
@@ -315,16 +314,9 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   needs; the engine already has the rest.
   - Scripts (`.lst`, `.pak`), click regions, scenes, cursors (only `.pcx`: scripts
     never name the `.gif`/`.bmp` copies), `.arn` (root copy), sounds and movies.
-    Verified against the `dracula-port` output: identical scripts, regions and `.arn`
-    pictures, animation atlases and cursors identical pixel for pixel; the remaining
-    differences are files from other sources (the PT-BR CD, another Dracula 2
-    build). Every Opus sound decodes to its WAV's length within 0.04 ms, so loops
-    are seamless.
   - Movies: Dracula 2's 4XM is standard and ffmpeg reads it. Dracula 1's raw 4XM is
-    decoded by `fourxm.ts` (bit-identical to `dracula-port`'s C++ on all 130 GOG
-    movies, frames and audio) and piped to ffmpeg; its audio is cut or padded to the
-    video's length first, because `-shortest` overshoots (and `dracula-port`'s
-    output lost the last frames). VP9 CRF 30 + Opus, `dracula-port`'s settings.
+    decoded by `fourxm.ts` and piped to ffmpeg; its audio is cut or padded to the
+    video's length first, because `-shortest` overshoots. VP9 CRF 30 + Opus.
   - Encoding goes through `ffmpeg-static` (an npm dependency that downloads the
     binary for the OS it is installed on; nothing OS-specific lives in the repo).
     `asarUnpack` keeps it runnable in a packaged app; `ffmpeg.ts` runs up to one
@@ -338,9 +330,9 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
     `config.json` points that game at it. An existing `<dest>/<game>` is never
     overwritten. `<dest>` defaults to the library root, else `defaultGamesDir()`:
     `%LOCALAPPDATA%\Dracula\Games` on Windows, `$XDG_DATA_HOME` (or
-    `~/.local/share`)`/Dracula/games` on Linux; local data, never synced. Stop aborts the import and kills ffmpeg; starting again resumes
-    (scenes with a `meta.json`, sounds and movies already written are skipped).
-  - Time: about 15 minutes per game on 12 cores, mostly the movies.
+    `~/.local/share`)`/Dracula/games` on Linux; local data, never synced. Stop
+    aborts the import and kills ffmpeg; starting again resumes (scenes with a
+    `meta.json`, sounds and movies already written are skipped).
 - **Sound.** Web Audio: each sound is a decoded `AudioBuffer` played by a buffer
   source into its own gain, then the master gain (the volume setting). Loops use
   `source.loop`, which is seamless; `<audio loop>` leaves a gap with Opus. Pausing
@@ -356,19 +348,9 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   screen (`app.ts` handles them until a game starts, then the engine takes over;
   never let both react, or the two toggles cancel out).
 
-## Known gaps / ideas (not started; ask first)
+## Planned work
 
-- Mass upscale of every asset (scenes, 2D screens, cursors, overlays, maybe videos).
-  Logical coordinates must not move: click regions, cursor positions and the 640×480
-  screen space stay as they are, only the pictures get sharper. Mind the Dracula 2
-  face quirk (`uXScale = 511/512`), which is tied to the original face width.
-
-- Release builds on GitHub Actions: a workflow in `.github/workflows/` that runs
-  when a version tag (`v*`) is pushed on `main`, builds the AppImage, the `.deb` and the
-  Windows installer (Linux and Windows runners), and attaches them to a GitHub release.
-
-A change to the data format bumps `DATA_FORMAT`; folders in the old format are then
-reported as outdated and converted again, not supported side by side.
+Lives in the GitHub issues, not in this file. Ask before starting one.
 
 ## Related project
 

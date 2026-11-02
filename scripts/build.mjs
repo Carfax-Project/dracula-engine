@@ -1,6 +1,6 @@
 // Builds everything with esbuild (fast). Type checking: npm run typecheck.
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, rmSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -8,6 +8,9 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const r = (p) => join(root, p);
 const release = process.argv.includes('--release');
 const common = { bundle: true, sourcemap: 'linked', logLevel: 'warning', legalComments: 'none' };
+
+rmSync(r('dist/app'), { recursive: true, force: true });
+if (release) rmSync(r('release'), { recursive: true, force: true });
 
 await Promise.all([
   build({ ...common, entryPoints: [r('src/main/main.ts')], outfile: r('dist/app/main.js'),

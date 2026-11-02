@@ -10,11 +10,11 @@
   "private": true,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/gabrielmmaranhao/dracula-engine.git"
+    "url": "git+https://github.com/Carfax-Project/dracula-engine.git"
   },
-  "homepage": "https://github.com/gabrielmmaranhao/dracula-engine#readme",
+  "homepage": "https://github.com/Carfax-Project/dracula-engine#readme",
   "bugs": {
-    "url": "https://github.com/gabrielmmaranhao/dracula-engine/issues"
+    "url": "https://github.com/Carfax-Project/dracula-engine/issues"
   },
   "engines": {
     "node": ">=22.12"

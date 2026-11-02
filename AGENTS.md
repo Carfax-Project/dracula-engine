@@ -179,8 +179,9 @@ docs/images/              README animations (start screen, three scenes, options
   through the `version` IPC). Bump it there before a release.
 - **Releases.** `.github/workflows/release.yml` runs on a pushed `v*` tag: it checks
   that the tag is on `main` and equals `v` + `version`, runs `typecheck`, `npm test`
-  and `npm run dist` on a Linux and a Windows runner, and publishes a GitHub release
-  with the AppImage, the `.deb` and the installer. Run by hand (`workflow_dispatch`) it
+  and `npm run dist` on a Linux and a Windows runner, and creates a draft GitHub
+  release with the AppImage, the `.deb` and the installer, published by hand after
+  testing them. Run by hand (`workflow_dispatch`) it
   only builds, and the packages are left as workflow artifacts.
 - **App icon.** One source, `assets/icon.ico` (16/32/48/256 px). `icon.png` is its
   256 px entry, extracted byte for byte, because Electron loads `.ico` only on

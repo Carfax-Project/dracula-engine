@@ -21,31 +21,32 @@
 ## Features
 
 - **Both games, one app** — pick a folder once and both are found on their own
+- **Imports straight from the installed game** — no extra tools, and the original files are never touched
 - **Smooth 360° panoramas** rendered with WebGL, at any window size
 - **Classic or free mouse** — the original crosshair look, or drag to look around
-- **Gamepad support** — stick to look, buttons to act
+- **Skip the intro** if you like, and go straight to the menu
 - **Fullscreen in one click**, stretched or in the original 4:3 with a blurred ambient fill
-- **Linux AppImage** and **portable Windows `.exe`**, nothing to install
+- **Linux AppImage or `.deb`**, and a **Windows installer** that needs no admin rights
 
 ## Controls
 
-| | Keyboard / mouse | Gamepad |
-|---|---|---|
-| Look around | mouse | sticks or d-pad |
-| Act | left click | `A` |
-| Inventory | right click | `B` |
-| Menu | `Esc` | `Start` |
-| Skip video | `Space` | `Select` |
-| Fullscreen | `F` / `F11` | |
-| Classic / free mouse | `L` | |
-| Stretched / 4:3 | `A` | |
-| Show clickable areas | `H` | |
+| | Keyboard / mouse |
+|---|---|
+| Look around | mouse / arrows |
+| Act | left click |
+| Inventory | right click / `Tab` |
+| Menu | `Esc` |
+| Skip video | `Space` / `Esc` |
+| Classic / free mouse | `F2` |
+| Stretched / 4:3 | `F3` |
+| Options (volume, mouse, display) | `F10` |
+| Fullscreen | `F11` |
 
 ## Run it
 
 Dracula Engine requires game data files from your own copies of Dracula: The Resurrection and/or Dracula 2: The Last Sanctuary.
 
-**GOG installation support** is a work in progress. For now, the games must be manually converted into a format supported by the engine before they can be played. Instructions for preparing the game files will be provided as support is finalized.
+Install the game (the GOG version works), then open **Settings → Import from game files…**, choose the installed game's folder and, if you like, where to save the converted copy (by default `%LOCALAPPDATA%\Dracula\Games` on Windows and `~/.local/share/Dracula/games` on Linux). The import converts everything once, which takes about a quarter of an hour, mostly for the movies; the installed game is never changed. A translation folder (for example a dubbed CD) can be given too: its files replace the game's ones with the same name.
 
 To run the engine in development mode:
 
@@ -54,7 +55,7 @@ npm install
 npm start
 ```
 
-Build the executables with `npm run dist`.
+Build the packages with `npm run dist`: the AppImage and the `.deb` on Linux, the installer on Windows.
 
 ## License
 

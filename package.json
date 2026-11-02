@@ -22,11 +22,11 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p .",
+    "test": "node scripts/test.mjs",
     "start": "node scripts/build.mjs && electron .",
-    "dist": "node scripts/build.mjs && electron-builder --linux AppImage --win portable",
-    "dist:linux": "node scripts/build.mjs && electron-builder --linux AppImage",
-    "dist:win": "node scripts/build.mjs && electron-builder --win portable",
-    "test:e2e": "node scripts/build.mjs && node scripts/e2e.mjs"
+    "dist": "node scripts/build.mjs --release && electron-builder",
+    "test:e2e": "node scripts/build.mjs && node scripts/e2e.mjs",
+    "import": "node scripts/build.mjs && node dist/app/import.js"
   },
   "devDependencies": {
     "@types/node": "^22.10.0",
@@ -53,17 +53,40 @@
       }
     ],
     "linux": {
-      "target": "AppImage",
+      "target": [
+        "AppImage",
+        "deb"
+      ],
       "category": "Game",
       "icon": "src/renderer/assets/icon.png",
       "syncDesktopName": true,
-      "artifactName": "Dracula-${version}.AppImage"
+      "artifactName": "Dracula-${version}-${arch}.${ext}"
     },
     "win": {
-      "target": "portable",
+      "target": "nsis",
       "icon": "src/renderer/assets/icon.ico",
-      "artifactName": "Dracula-${version}.exe"
+      "artifactName": "Dracula-Setup-${version}-${arch}.${ext}"
     },
-    "publish": null
+    "publish": null,
+    "asarUnpack": [
+      "node_modules/ffmpeg-static/**"
+    ],
+    "deb": {
+      "artifactName": "dracula_${version}_${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  },
+  "dependencies": {
+    "ffmpeg-static": "5.3.0"
+  },
+  "allowScripts": {
+    "ffmpeg-static@5.3.0": true
   }
 }

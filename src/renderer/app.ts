@@ -3,11 +3,12 @@
  * playable one starts that game.
  * The markup lives in index.html as <template> elements; this file only clones them
  * and fills text from UI in ../shared/strings. */
-import type { GameEntry, GameId, GameIndex, Library } from '../shared/format';
+import type { GameEntry, GameId, GameIndex, ImportPick, Library } from '../shared/format';
 import { Engine } from './engine';
 import { platform } from './platform';
 import { UI } from '../shared/strings';
-import { $, clone, fetchData } from './util';
+import { bindSettings } from './settings';
+import { $, clamp, clone, fetchData } from './util';
 
 const GAMES: { id: GameId; title: string }[] = [
   { id: 'dracula1', title: 'Dracula: The Resurrection' },
@@ -16,6 +17,23 @@ const GAMES: { id: GameId; title: string }[] = [
 
 const params = new URLSearchParams(location.search);
 let started = false;
+
+let playable: { el: HTMLElement; entry: GameEntry }[] = [];
+let selected = -1;
+
+function select(i: number) {
+  selected = i;
+  playable.forEach((p, j) => p.el.classList.toggle('sel', j === i));
+  $('ui').querySelector('.games')?.classList.toggle('picking', i >= 0);
+}
+function move(step: number) {
+  if (!playable.length) return;
+  select(selected < 0 ? (step > 0 ? playable.length - 1 : 0) : clamp(selected + step, 0, playable.length - 1));
+}
+function play() {
+  const p = playable[selected] ?? playable[0];
+  if (p) void start(p.entry);
+}
 
 /** Brief notice in the corner (the same strip the engine uses during play). */
 function notice(text: string) {
@@ -29,16 +47,17 @@ function notice(text: string) {
 function half(g: typeof GAMES[number], e: GameEntry) {
   const frag = clone('tpl-game');
   const root = frag.querySelector<HTMLElement>('.game')!;
-  root.querySelector<HTMLImageElement>('img')!.src = `assets/${g.id}-cover.jpg`;
+  for (const img of root.querySelectorAll('img')) img.src = `assets/${g.id}-cover.jpg`;
   root.querySelector('.name')!.textContent = g.title;
   if (e.status === 'ok') {
     root.dataset.play = g.id;
     root.title = e.path ?? '';
     root.onclick = () => void start(e);
-    root.onkeydown = (ev) => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); void start(e); } };
+    root.onmouseenter = root.onfocus = () => select(playable.findIndex((p) => p.el === root));
   } else {
     root.classList.add('unset');
     root.removeAttribute('tabindex');
+    root.onmouseenter = () => select(-1);
   }
   return frag;
 }
@@ -53,6 +72,7 @@ function foundText(e: GameEntry, root: string | null) {
   if (!root) return '';   // the path box above already says no folder is set
   if (e.status === 'missing') return UI.folderGone;
   if (e.status === 'invalid') return UI.folderInvalid;
+  if (e.status === 'outdated') return UI.folderOutdated;
   return UI.notFound;
 }
 
@@ -84,6 +104,10 @@ function openSettings(lib: Library, reload: () => void) {
     list.append(li);
   }
 
+  scrim.querySelector('.opts')!.append(clone('tpl-prefs'));
+  bindSettings(scrim);
+  void platform.version().then((v) => { scrim.querySelector('[data-version]')!.textContent = v; });
+
   const close = () => { scrim.remove(); document.onkeydown = null; };
   scrim.querySelector<HTMLButtonElement>('button.close')!.onclick = close;
   scrim.onclick = (ev) => { if (ev.target === scrim) close(); };
@@ -93,22 +117,102 @@ function openSettings(lib: Library, reload: () => void) {
     close();
     if (!r.cancelled) reload();
   };
+  scrim.querySelector<HTMLButtonElement>('button[data-import]')!.onclick = () => { close(); openImport(reload); };
+}
+
+function openImport(reload: () => void) {
+  const ui = $('ui');
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  scrim.append(clone('tpl-import'));
+  ui.append(scrim);
+  const q = <T extends Element = HTMLElement>(sel: string) => scrim.querySelector<T>(sel)!;
+  const start = q<HTMLButtonElement>('button.start'), stop = q<HTMLButtonElement>('button.stop');
+  const closeBtn = q<HTMLButtonElement>('button.close'), msg = q('p.msg');
+  let running = false, imported = false;
+
+  const note = (field: string, text: string, kind = '') => {
+    const el = q(`[data-note=${field}]`);
+    el.textContent = text;
+    el.className = 'note ' + kind;
+  };
+  const refresh = async () => {
+    const s = await platform.importState();
+    q('[data-path=game]').textContent = s.game?.path ?? UI.importNoGame;
+    q('[data-path=overlay]').textContent = s.overlay ?? UI.importNoOverlay;
+    q('[data-path=dest]').textContent = s.dest;
+    if (s.game) note('game', UI.importFound(GAMES.find((g) => g.id === s.game!.id)!.title), 'ok');
+    note('dest', s.target ? UI.importInto(s.target) : '');
+    q<HTMLButtonElement>('[data-clear=overlay]').disabled = !s.overlay;
+    start.disabled = !s.game;
+  };
+  for (const b of scrim.querySelectorAll<HTMLButtonElement>('[data-pick]')) {
+    b.onclick = async () => {
+      const r = await platform.importPick(b.dataset.pick as ImportPick);
+      if (r.error) note(b.dataset.pick!, r.error, 'bad');
+      await refresh();
+    };
+  }
+  q<HTMLButtonElement>('[data-clear=overlay]').onclick = async () => { await platform.importClear('overlay'); await refresh(); };
+
+  const setRunning = (on: boolean) => {
+    running = on;
+    for (const b of scrim.querySelectorAll<HTMLButtonElement>('.form button')) b.disabled = on;
+    start.hidden = on;
+    stop.hidden = !on;
+    stop.disabled = false;
+    closeBtn.disabled = on;
+    q('.progress').hidden = !on;
+  };
+  platform.onImportProgress((p) => {
+    q('.progress .label').textContent = UI.importStage[p.stage];
+    q('.progress .count').textContent = p.total > 1 ? `${p.done} / ${p.total}` : '';
+    q('.progress .bar > div').style.width = (p.total ? (100 * p.done) / p.total : 0) + '%';
+  });
+  start.onclick = async () => {
+    msg.textContent = '';
+    setRunning(true);
+    const r = await platform.importStart();
+    setRunning(false);
+    if (r.ok) {
+      msg.textContent = UI.importDone(GAMES.find((g) => g.id === r.game)!.title);
+      imported = true;
+    } else msg.textContent = r.cancelled ? UI.importCancelled : UI.importFailed(r.error ?? '');
+    await refresh();
+  };
+  stop.onclick = () => { stop.disabled = true; platform.importCancel(); };
+
+  const close = () => {
+    if (running) return;
+    scrim.remove();
+    document.onkeydown = null;
+    if (imported) reload();
+  };
+  closeBtn.onclick = close;
+  scrim.onclick = (ev) => { if (ev.target === scrim) close(); };
+  document.onkeydown = (ev) => { if (ev.key === 'Escape') close(); };
+  void refresh();
 }
 
 async function render() {
   const ui = $('ui');
   const lib = await platform.getLibrary().catch(() => ({ root: null, games: [] } as Library));
   const byId = new Map(lib.games.map((e) => [e.id, e]));
-  const playable = lib.games.filter((e) => e.status === 'ok');
-  ui.className = playable.length ? 'pick-game' : 'pick-game nothing';
+  const ready = lib.games.filter((e) => e.status === 'ok');
+  ui.className = ready.length ? 'pick-game' : 'pick-game nothing';
   ui.replaceChildren(clone('tpl-start'));
-  const games = ui.querySelector('.games')!;
+  const games = ui.querySelector<HTMLElement>('.games')!;
+  playable = [];
+  selected = -1;
   for (const g of GAMES) {
-    games.append(half(g, byId.get(g.id) || { id: g.id, path: null, status: 'unset', base: null }));
+    const e = byId.get(g.id) || { id: g.id, path: null, status: 'unset' as const, base: null };
+    games.append(half(g, e));
+    if (e.status === 'ok') playable.push({ el: games.lastElementChild as HTMLElement, entry: e });
   }
+  games.onmouseleave = () => select(-1);
   ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = () => openSettings(lib, () => void render());
   ui.querySelector<HTMLButtonElement>('button.quit')!.onclick = () => platform.quit();
-  return playable;
+  return ready;
 }
 
 async function start(e: GameEntry) {
@@ -142,23 +246,17 @@ async function start(e: GameEntry) {
 
 async function main() {
   await platform.loadPrefs();
-  // F / F11 on the start screen too. Once a game runs the engine has its own handler,
+  // F11 on the start screen too. Once a game runs the engine has its own handler,
   // so this one stands down (both firing would toggle twice and cancel out).
   window.addEventListener('keydown', (e) => {
-    if (started || !(e.key === 'F11' || e.key === 'f' || e.key === 'F')) return;
-    e.preventDefault();
-    platform.toggleFullscreen();
-  });
-  const entries = await render();
-  const ready = entries.filter((e) => e.status === 'ok');
-  // gamepad: A starts the first available game
-  const pollPad = () => {
     if (started) return;
-    const gp = [...(navigator.getGamepads?.() || [])].find((p) => p && p.connected);
-    if (gp && gp.buttons[0]?.pressed && ready[0]) { void start(ready[0]); return; }
-    requestAnimationFrame(pollPad);
-  };
-  requestAnimationFrame(pollPad);
+    if (e.key === 'F11') { e.preventDefault(); platform.toggleFullscreen(); return; }
+    // Enter on a focused button is that button's click
+    if ($('ui').querySelector('.scrim') || e.target instanceof HTMLButtonElement) return;
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { e.preventDefault(); move(e.key === 'ArrowLeft' ? -1 : 1); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); play(); }
+  });
+  const ready = await render();
   if (params.get('autostart') && ready.length) {
     const want = params.get('game');
     void start(ready.find((e) => e.id === want) || ready[0]);

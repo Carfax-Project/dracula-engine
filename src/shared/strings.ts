@@ -17,12 +17,30 @@ export const UI = {
   notFound: "Not found in this folder.",
   folderGone: "Folder is gone.",
   folderInvalid: "No longer holds this game.",
+  folderOutdated: "Old data format; convert this game again.",
+
+  // ---------------------------------------------------------------- importer
+  importNoGame: "No game folder chosen yet.",
+  importNoOverlay: "None",
+  importFound: (title: string) => "Found " + title,
+  importInto: (folder: string) => "Will be created as " + folder,
+  importStage: { files: "Scripts, cursors and sounds", scenes: "Scenes", movies: "Movies" } as Record<string, string>,
+  importDone: (title: string) => title + " is ready to play.",
+  importCancelled: "Import stopped. Starting it again picks up where it left off.",
+  importFailed: (reason: string) => "Import failed: " + reason,
+  importNotAGame: "That folder doesn't hold Dracula: The Resurrection or Dracula 2.",
+  importBusy: "An import is already running.",
+  importIncomplete: "Choose the game folder and where to save it first.",
+  importExists: (folder: string) => folder + " already exists. Move it away or choose another destination.",
+  importCrashed: (code: number) => "the importer stopped unexpectedly (" + code + ")",
 
   // -------------------------------------------------------- in-game messages
-  classicMouse: "Classic mouse: the mouse turns the camera (L to switch)",
-  freeMouse: "Free look: drag to look around (L to switch)",
-  stretched: "Stretched to the window (A to toggle)",
-  original43: "Original 4:3 (A to toggle)",
+  classicMouse: "Classic mouse: the mouse turns the camera (F2 to switch)",
+  freeMouse: "Free look: drag to look around (F2 to switch)",
+  stretched: "Stretched to the window (F3 to toggle)",
+  original43: "Original 4:3 (F3 to toggle)",
+  volumeValue: (v: number) => Math.round(v * 100) + "%",
+  sensitivityValue: (v: number) => v.toFixed(2) + "×",
   saved: "Game saved",
   saveFailed: "Could not write the save to disk",
   runtimeError: (reason: string) => "Error: " + reason,
@@ -30,4 +48,7 @@ export const UI = {
   // ---------------------------------------------- main process folder dialogs
   folderDialogTitle: "Folder holding the converted Dracula game data",
   folderHasNoData: "Neither game was found in that folder.",
+  importGameDialog: "Installed game folder (Dracula: The Resurrection or Dracula 2)",
+  importOverlayDialog: "Translation folder (its files replace the game's)",
+  importDestDialog: "Folder to save the converted game in",
 } as const;

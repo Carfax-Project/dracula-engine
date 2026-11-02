@@ -10,6 +10,7 @@ release/
 data/
 data2/
 game-data/
+dracula-port/
 
 # Local runtime data
 saves/
@@ -23,7 +24,7 @@ npm-debug.log*
 .DS_Store
 .idea/
 .vscode/
-.claude/settings.local.json
+.claude/
 
 # Environment
 .env

@@ -75,6 +75,7 @@ npm install
 npm start                 # build + run the desktop app
 npm run build             # esbuild bundles to dist/app
 npm run typecheck         # tsc --noEmit, strict mode (must pass)
+npm test                  # unit tests (node:test), no game data needed
 npm run test:e2e          # Playwright drives the real app (see below)
 npm run dist              # release build (DEV off) for this OS: AppImage + .deb on Linux, NSIS installer on Windows
 npm run import -- --game <GOG folder> --out <new data folder> [--overlay <translation>]
@@ -102,8 +103,12 @@ Requirements and runtime details (kept out of the README, which is for players):
   holds `config.json`, `prefs.json` and `saves/`. `DRACULA_USER_DATA=<dir>` swaps it.
 - On Ubuntu 24.04+, an AppImage that exits with a sandbox error needs `--no-sandbox`.
 
-After any change: `npm run typecheck` and `npm run build` must pass. For behaviour
-changes, run the e2e test when game data is available.
+After any change: `npm run typecheck`, `npm test` and `npm run build` must pass. For
+behaviour changes, run the e2e test when game data is available.
+
+Unit tests live in `test/*.test.ts`; `scripts/test.mjs` bundles them with esbuild and
+runs `node --test`. Their inputs are a few bytes built inside the test, never game
+files (hard rule 2).
 
 ## Layout
 
@@ -137,6 +142,8 @@ src/renderer/index.html   Page + CSS (layered canvases: gl, screen2d, overlay; v
 scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
                           renderer as IIFE; --release turns DEV off)
 scripts/e2e.mjs           End-to-end smoke test
+scripts/test.mjs          Unit test runner
+test/                     Unit tests (importer decoders, file lookup, util)
 docs/images/              README screenshots (start screen + three scenes)
 ```
 
@@ -170,6 +177,11 @@ docs/images/              README screenshots (start screen + three scenes)
 - **Version.** `version` in `package.json` is the only source: electron-builder names
   the packages after it, and the settings sheet footer shows it (`app.getVersion()`
   through the `version` IPC). Bump it there before a release.
+- **Releases.** `.github/workflows/release.yml` runs on a pushed `v*` tag: it checks
+  that the tag is on `main` and equals `v` + `version`, runs `typecheck`, `npm test`
+  and `npm run dist` on a Linux and a Windows runner, and publishes a GitHub release
+  with the AppImage, the `.deb` and the installer. Run by hand (`workflow_dispatch`) it
+  only builds, and the packages are left as workflow artifacts.
 - **App icon.** One source, `assets/icon.ico` (16/32/48/256 px). `icon.png` is its
   256 px entry, extracted byte for byte, because Electron loads `.ico` only on
   Windows: window and `win` build use the `.ico`, Linux uses the PNG. If the icon

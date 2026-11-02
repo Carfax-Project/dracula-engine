@@ -22,6 +22,7 @@
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc --noEmit -p .",
+    "test": "node scripts/test.mjs",
     "start": "node scripts/build.mjs && electron .",
     "dist": "node scripts/build.mjs --release && electron-builder",
     "test:e2e": "node scripts/build.mjs && node scripts/e2e.mjs",
@@ -59,12 +60,12 @@
       "category": "Game",
       "icon": "src/renderer/assets/icon.png",
       "syncDesktopName": true,
-      "artifactName": "Dracula-${version}.${ext}"
+      "artifactName": "Dracula-${version}-${arch}.${ext}"
     },
     "win": {
       "target": "nsis",
       "icon": "src/renderer/assets/icon.ico",
-      "artifactName": "Dracula-Setup-${version}.${ext}"
+      "artifactName": "Dracula-Setup-${version}-${arch}.${ext}"
     },
     "publish": null,
     "asarUnpack": [

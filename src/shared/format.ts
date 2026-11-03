@@ -63,7 +63,7 @@ export interface NativeApi {
   getLibrary(): Promise<Library>;
   /** Picks one folder holding both games; each game is still detected on its own. */
   chooseLibrary(): Promise<{ ok?: true; cancelled?: true; error?: string }>;
-  removeGame(game: GameId): Promise<{ ok?: true; cancelled?: true; error?: string }>;
+  removeGame(game: GameId): Promise<{ ok?: true; error?: string }>;
   readSaves(game: GameId): Promise<Record<string, string>>;
   writeSave(game: GameId, slot: number, json: string): Promise<boolean>;
   readPrefs(): Promise<Record<string, unknown>>;

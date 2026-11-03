@@ -52,11 +52,6 @@ export const UI = {
 
   // ---------------------------------------------- main process folder dialogs
   folderDialogTitle: "Folder holding the converted Dracula game data",
-  folderHasNoData: "Neither game was found in that folder.",
-  removeQuestion: "Delete this converted game?",
-  removeDetail: (folder: string) => folder + "\n\nYour saves are kept and the original game files are not touched. Importing the game again recreates it.",
-  removeButton: "Delete",
-  cancel: "Cancel",
-  importGameDialog: "Installed game, a folder with its CD images, or a folder holding both games",
+  folderHasNoData: "Neither game was found in that folder.",  importGameDialog: "Installed game, a folder with its CD images, or a folder holding both games",
   importDestDialog: "Folder to save the converted game in",
 } as const;

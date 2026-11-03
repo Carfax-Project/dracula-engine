@@ -181,8 +181,9 @@ docs/images/              README animations (start screen, three scenes, options
     stands out, since it is then the only thing worth clicking.
 - **Removing a game.** Remove in the gear sheet asks main (`removeGame`) to delete
   the folder `config.json` names for that game (e.g. `<library>/dracula1`), never the
-  library folder around it, after a native confirmation that shows the path. Main
-  deletes it only while `gameOf()` still says it holds that game, plus
+  library folder around it, after a confirmation that shows the path (`tpl-remove`;
+  not a native message box, which crashes Electron 44 under KDE on Wayland). Main
+  deletes it only while it still validates as that game (`ok` or `outdated`), plus
   `<folder>.partial` when the folder is named after the game (an interrupted import),
   then drops the game from `config.json`. Saves live in `<userData>` and stay. It is
   how a player frees the space after a data format change, before importing again.

@@ -196,17 +196,9 @@ function setupIpc(win: () => BrowserWindow | null) {
   // Deletes the game's own folder, never the library around it, and only while it still
   // holds that game: a hand-edited config.json can't point this at anything else.
   ipcMain.handle('removeGame', async (_e, id: unknown) => {
-    if (!isGameId(id)) return { cancelled: true };
+    if (!isGameId(id)) return { error: UI.folderInvalid };
     const e = entry(id);
     if (!e.path || (e.status !== 'ok' && e.status !== 'outdated')) return { error: e.status === 'missing' ? UI.folderGone : UI.folderInvalid };
-    const w = win();
-    const opts: Electron.MessageBoxOptions = {
-      type: 'warning', buttons: [UI.removeButton, UI.cancel], defaultId: 1, cancelId: 1,
-      message: UI.removeQuestion, detail: UI.removeDetail(e.path),
-    };
-    const r = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
-    if (r.response !== 0) return { cancelled: true };
-    if (gameOf(e.path)?.id !== id) return { error: UI.folderInvalid };
     try {
       await fs.promises.rm(e.path, { recursive: true, force: true });
       // what an interrupted import into the same place left behind

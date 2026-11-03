@@ -104,11 +104,11 @@ function openSettings(lib: Library, reload: () => void) {
       const remove = document.createElement('button');
       remove.className = 'sec remove';
       remove.textContent = UI.remove;
-      remove.onclick = async () => {
+      remove.onclick = () => confirmRemove(e.path!, async () => {
         const r = await platform.removeGame(g.id);
         if (r.error) where.textContent = r.error;
-        else if (r.ok) { close(); reload(); }
-      };
+        else { close(); reload(); }
+      });
       li.append(remove);
     }
     list.append(li);
@@ -131,6 +131,23 @@ function openSettings(lib: Library, reload: () => void) {
     if (!r.cancelled) reload();
   };
   scrim.querySelector<HTMLButtonElement>('button[data-import]')!.onclick = () => { close(); openImport(reload); };
+}
+
+// Not a native message box: those crash Electron 44 under KDE on Wayland.
+function confirmRemove(folder: string, onDelete: () => void) {
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  scrim.append(clone('tpl-remove'));
+  $('ui').append(scrim);
+  scrim.querySelector('.path')!.textContent = folder;
+  const keys = document.onkeydown;
+  const close = () => { scrim.remove(); document.onkeydown = keys; };
+  const cancel = scrim.querySelector<HTMLButtonElement>('button.cancel')!;
+  cancel.onclick = close;
+  scrim.querySelector<HTMLButtonElement>('button.delete')!.onclick = () => { close(); onDelete(); };
+  scrim.onclick = (ev) => { if (ev.target === scrim) close(); };
+  document.onkeydown = (ev) => { if (ev.key === 'Escape') close(); };
+  cancel.focus();
 }
 
 function openImport(reload: () => void) {

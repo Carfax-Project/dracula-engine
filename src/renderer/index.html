@@ -127,6 +127,7 @@
   #ui .sheet .row { justify-content: flex-end; }
   #ui .sheet .row.pick-row { gap: 10px; }
   #ui .sheet.import { width: 600px; }
+  #ui .sheet.remove { width: 440px; }
   #ui .sheet .pickline { display: flex; gap: 8px; align-items: stretch; }
   #ui .sheet .pickline .where { flex: 1; min-width: 0; margin: 0; }
   #ui .sheet .pickline button { padding: 6px 14px; font-size: 13px; }
@@ -315,6 +316,19 @@
       <button class="start">Import</button>
       <button class="sec stop" hidden>Stop</button>
       <button class="sec close">Close</button>
+    </div>
+  </div>
+</template>
+
+<template id="tpl-remove">
+  <div class="sheet remove" role="alertdialog" aria-modal="true" aria-label="Delete this converted game?">
+    <h2>Delete this converted game?</h2>
+    <div class="where"><span class="path"></span></div>
+    <p class="lead">Your saves are kept and the original game files are not touched.
+      Importing the game again recreates it.</p>
+    <div class="row">
+      <button class="sec cancel">Cancel</button>
+      <button class="delete">Delete</button>
     </div>
   </div>
 </template>

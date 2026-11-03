@@ -231,7 +231,9 @@ docs/images/              README animations (start screen, three scenes, options
   subfolder (symlinks included), so picking the parent finds both games, and picking a
   single game's folder finds just that one. `config.json` keeps `root` (what the user
   picked, for display and as the dialog's starting point) and `games` (the folder
-  resolved per game, which is what the protocol serves).
+  resolved per game, which is what the protocol serves). `getLibrary` runs `locate()`
+  over `root` again for each game missing from `games` and stores what it finds, so a
+  game copied there later (a restored backup) shows up without picking the folder.
 - **Saves.**
   - One file per slot at `<userData>/saves/<gameId>/slotN.json`, always. Never write
     saves next to the game data: that folder is read-only input and may live in a

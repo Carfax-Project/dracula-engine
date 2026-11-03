@@ -167,6 +167,14 @@ function handleGameProtocol() {
 function setupIpc(win: () => BrowserWindow | null) {
   ipcMain.handle('getLibrary', () => {
     const cfg = readConfig();
+    // A game put into the chosen folder later (a restored backup, one removed and copied
+    // back) is found without picking the folder again.
+    let found = false;
+    for (const id of GAME_IDS) {
+      const dir = cfg.root && !cfg.games?.[id] ? locate(cfg.root, id) : null;
+      if (dir) { cfg.games = { ...cfg.games, [id]: dir }; found = true; }
+    }
+    if (found) writeConfig(cfg);
     return { root: cfg.root ?? null, games: GAME_IDS.map((id) => entry(id, cfg)) };
   });
 

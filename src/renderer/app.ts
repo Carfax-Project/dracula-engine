@@ -238,7 +238,12 @@ async function render() {
     if (e.status === 'ok') playable.push({ el: games.lastElementChild as HTMLElement, entry: e });
   }
   games.onmouseleave = () => select(-1);
-  ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = () => openSettings(lib, () => void render());
+  ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = async () => {
+    // picks up games copied into the folder, or deleted, since the screen was drawn
+    const fresh = await platform.getLibrary();
+    if (JSON.stringify(fresh) !== JSON.stringify(lib)) await render();
+    openSettings(fresh, () => void render());
+  };
   ui.querySelector<HTMLButtonElement>('button.quit')!.onclick = () => platform.quit();
   void showUpdate();
   return ready;

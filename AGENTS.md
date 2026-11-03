@@ -172,7 +172,9 @@ docs/images/              README animations (start screen, three scenes, options
     are ignored while the gear sheet is open or a corner button has the focus.
   - **Corner.** The halves carry no controls; the `.corner` pair at the top right
     holds the gear and quit (`platform.quit()`), each a glyph in a pill whose label
-    slides out on hover. The gear opens the `tpl-settings` sheet: chosen folder, what
+    slides out on hover. The gear reads the library again (so games copied in or
+    deleted since show up, and the covers are redrawn if anything changed) and opens
+    the `tpl-settings` sheet: chosen folder, what
     was detected per game (with a Remove button for a found or outdated one), the
     "Choose folder…" button (`data-choose`, which the e2e test clicks), "Import from
     game files…" (`data-import`, opens `tpl-import`),

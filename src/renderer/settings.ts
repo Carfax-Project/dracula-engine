@@ -10,7 +10,7 @@ export interface SettingsHooks {
   volume?(v: number): void;
   sensitivity?(v: number): void;
   classic?(on: boolean): void;
-  stretch?(on: boolean): void;
+  widescreen?(on: boolean): void;
 }
 
 export function bindSettings(root: ParentNode, hooks: SettingsHooks = {}) {
@@ -22,7 +22,7 @@ export function bindSettings(root: ParentNode, hooks: SettingsHooks = {}) {
     el.oninput = () => { const v = el.valueAsNumber / 100; out.textContent = show(v); hooks[name]?.(v); };
     el.onchange = () => platform.setPref(name, el.valueAsNumber / 100);
   };
-  const choice = (name: 'classic' | 'stretch', on: boolean) => {
+  const choice = (name: 'classic' | 'widescreen', on: boolean) => {
     for (const el of root.querySelectorAll<HTMLInputElement>(`input[name=${name}]`)) {
       el.checked = (el.value === '1') === on;
       el.onchange = () => { const v = el.value === '1', h = hooks[name]; if (h) h(v); else platform.setPref(name, v); };
@@ -36,6 +36,6 @@ export function bindSettings(root: ParentNode, hooks: SettingsHooks = {}) {
   slider('volume', prefVolume(), UI.volumeValue);
   slider('sensitivity', prefSensitivity(), UI.sensitivityValue);
   choice('classic', platform.pref('classic', true));
-  choice('stretch', platform.pref('stretch', true));
+  choice('widescreen', platform.pref('widescreen', true));
   toggle('skipIntro', platform.pref('skipIntro', false));
 }

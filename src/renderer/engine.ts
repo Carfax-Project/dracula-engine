@@ -44,7 +44,7 @@ function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | 
     return;
   }
   o.fillStyle = 'rgba(255,255,0,0.25)';
-  for (let y = 0; y < H; y += 8) for (let x = 0; x < W; x += 8) {
+  for (let y = 0; y < H; y += 8) for (let x = 0; x < cam.width; x += 8) {
     const [a, b] = rayAngles(cam, x + 4, y + 4);
     if (regs.some((r) => contains3D(r, a, b))) o.fillRect(x, y, 8, 8);
   }
@@ -52,7 +52,7 @@ function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | 
 
 const NO_TIMER = () => ({ flags: 0, t: 0, initial: 0, show: false, warp: '' });
 
-/** Length of the 4:3 <-> stretched easing; matches #box.easing in index.html. */
+/** Length of the 4:3 <-> widescreen easing; matches #box.easing in index.html. */
 const LAYOUT_EASE_MS = 450;
 
 export class Engine {
@@ -118,7 +118,10 @@ export class Engine {
   private drag: { x: number; y: number; lx: number; ly: number; moved: boolean } | null = null;
   private classic = false;
   wantClassic = platform.pref('classic', true);
-  private stretch = platform.pref('stretch', true);
+  private widescreen = platform.pref('widescreen', true);
+  // the box fills the window (a panorama in widescreen); the logical view is then wider than W
+  private fill = false;
+  private lw = W;
   private unlockRequested = false;
   private lockFailed = false;
   private lastEscKey = 0;
@@ -170,7 +173,7 @@ export class Engine {
     window.addEventListener('resize', () => this.layout());
     startBackdrop(
       () => this.video.style.display === 'block' ? this.video : this.vr.isVR ? this.glCanvas : this.screen,
-      () => this.running && !this.stretch,
+      () => this.running && !this.fill,
     );
   }
 
@@ -536,18 +539,24 @@ export class Engine {
   }
 
   // ---------------------------------------------------------- render
-  /** Sizes the game box. `animate` (the F3 toggle only, never a window resize) eases the
-   *  box between 4:3 and stretched: the frame visibly stretches or pulls back in. */
+  /** Sizes the game box: the whole window for a panorama in widescreen, else 4:3.
+   *  `animate` (F3, or switching between a panorama and a 4:3 screen or movie, never a
+   *  window resize) eases the box between the two. */
   layout(animate = false) {
     const vw = window.innerWidth, vh = window.innerHeight;
+    this.fill = this.wantFill();
     const scale = Math.min(vw / W, vh / H);
-    const w = this.stretch ? vw : Math.floor(W * scale);
-    const h = this.stretch ? vh : Math.floor(H * scale);
+    const w = this.fill ? vw : Math.floor(W * scale);
+    const h = this.fill ? vh : Math.floor(H * scale);
+    const lw = this.fill ? Math.round(H * vw / vh) : W;
+    if (lw !== this.lw) {
+      this.mouse.x = clamp(this.mouse.x + (lw - this.lw) / 2, 0, lw - 1);
+      this.lw = this.overlay.width = lw;
+    }
     const box = $('box');
     box.classList.toggle('easing', animate);
     box.style.width = w + 'px';
     box.style.height = h + 'px';
-    this.video.style.objectFit = this.stretch ? 'fill' : 'contain';
     // While easing, keep the larger render size so the frame never turns blurry
     // mid-animation; the exact size is set once the box has settled.
     const dpr = window.devicePixelRatio || 1;
@@ -563,18 +572,24 @@ export class Engine {
     box.addEventListener('transitionend', onEnd);
     this.layoutTimer = window.setTimeout(settle, LAYOUT_EASE_MS + 400);
   }
+  private wantFill() {
+    return this.widescreen && this.vr.isVR && this.video.style.display !== 'block' && innerWidth * H > innerHeight * W;
+  }
+  private relayout() { if (this.wantFill() !== this.fill) this.layout(true); }
   private renderScene(dt: number) {
+    this.relayout();
     this.tickAnims(dt);
     this.glCanvas.style.visibility = this.vr.isVR ? 'visible' : 'hidden';
     this.screen.style.visibility = this.vr.isVR ? 'hidden' : 'visible';
     if (this.vr.isVR) {
       for (let i = 0; i < 6; ++i) if (this.faceDirty[i]) { this.pano.upload(i, this.faces[i]); this.faceDirty[i] = false; }
-      this.cam = camera(this.angleX.angle, this.angleY.angle, this.fov);
+      this.cam = camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw);
       if (this.waves) this.wavesT += dt * 20;
       this.pano.draw(this.cam, this.waves ? this.wavesT : -1, this.faceXScale);
     }
   }
   private composite(target: HTMLCanvasElement) {
+    if (target.width !== this.lw) target.width = this.lw;
     const ctx = target.getContext('2d')!;
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, target.width, target.height);
@@ -583,27 +598,32 @@ export class Engine {
   private saveThumbnail() {
     const ctx = this.thumbnail.getContext('2d')!;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(this.vr.isVR ? this.glCanvas : this.screen, 0, 0, THUMB_W, THUMB_H);
+    const src = this.vr.isVR ? this.glCanvas : this.screen;
+    const sw = Math.min(src.width, src.height * W / H);   // the middle 4:3 of a widescreen view
+    ctx.drawImage(src, (src.width - sw) / 2, 0, sw, src.height, 0, 0, THUMB_W, THUMB_H);
   }
   private drawOverlay(cursor: Cursor | null) {
     const o = this.octx;
-    o.clearRect(0, 0, W, H);
+    o.clearRect(0, 0, this.lw, H);
     if (this.transition) {
+      // centred: the scene before may have been wider or narrower than this one
       o.globalAlpha = this.transition.alpha;
-      o.drawImage(this.snapshot, 0, 0);
+      o.drawImage(this.snapshot, Math.floor((this.lw - this.snapshot.width) / 2), 0);
       o.globalAlpha = 1;
     }
-    if (this.imageOverlay) o.drawImage(this.imageOverlay.canvas, this.imageOverlay.x, this.imageOverlay.y);
-    this.drawTimer();
+    // Dracula 2's HUD is laid out for 640x480, so it stays in the middle of a wider view
+    const ox = Math.floor((this.lw - W) / 2);
+    if (this.imageOverlay) this.drawImageOverlay(ox);
+    this.drawTimer(ox);
     if (DEV && this.showRegions && this.regions) {
-      drawRegions(this.octx, this.regions, this.vr.isVR ? this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov) : null);
+      drawRegions(this.octx, this.regions, this.vr.isVR ? this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw) : null);
     }
     if (this.fade < 0) {
       o.fillStyle = 'rgba(0,0,0,' + clamp(-this.fade / 255, 0, 1) + ')';
-      o.fillRect(0, 0, W, H);
+      o.fillRect(0, 0, this.lw, H);
     } else if (this.fade > 0) {
       o.fillStyle = 'rgba(255,255,255,' + clamp(this.fade / 255, 0, 1) + ')';
-      o.fillRect(0, 0, W, H);
+      o.fillRect(0, 0, this.lw, H);
     }
     if (cursor && cursor.img) {
       const p = this.cursorPos();
@@ -633,6 +653,16 @@ export class Engine {
     ctx.putImageData(d, 0, 0);
     this.imageOverlay = { canvas: c, x, y };
   }
+  private drawImageOverlay(ox: number) {
+    const o = this.octx, { canvas: c, y } = this.imageOverlay!, x = this.imageOverlay!.x + ox, right = x + c.width;
+    o.drawImage(c, x, y);
+    // The pictures are full-screen: beside them, stretch their edge columns (black around
+    // the magnifier, nothing beside a weapon)
+    o.imageSmoothingEnabled = false;
+    if (x > 0) o.drawImage(c, 0, 0, 1, c.height, 0, y, x, c.height);
+    if (right < this.lw) o.drawImage(c, c.width - 1, 0, 1, c.height, right, y, this.lw - right, c.height);
+    o.imageSmoothingEnabled = true;
+  }
   private tickTimer(dt: number) {
     const tm = this.timer;
     if (!tm.flags) return;
@@ -643,7 +673,7 @@ export class Engine {
       if (warp) this.goToWarp(warp); else this.nextTest = 99;
     }
   }
-  private drawTimer() {
+  private drawTimer(ox: number) {
     const tm = this.timer;
     if ((tm.flags & 4) === 0 || !tm.show || !(tm.initial > 0)) return;
     if (!this.timerImgs) {
@@ -656,9 +686,9 @@ export class Engine {
     if (this.timerImgs === 'loading') return;
     const [bg, fg] = this.timerImgs;
     const o = this.octx;
-    o.drawImage(bg, 165, 15);   // Dracula 2 timer bar position
+    o.drawImage(bg, 165 + ox, 15);   // Dracula 2 timer bar position
     const w = Math.floor(fg.width * (tm.t / tm.initial));
-    if (w > 0) o.drawImage(fg, 0, 0, w, fg.height, 177, 15, w, fg.height);
+    if (w > 0) o.drawImage(fg, 0, 0, w, fg.height, 177 + ox, 15, w, fg.height);
   }
   setMessage(text: string, ms = 2500) {
     this.msg.textContent = text;
@@ -685,11 +715,11 @@ export class Engine {
   }
   /** Crosshair in the centre: classic mouse, in panoramas. */
   private centered() { return this.vr.isVR && this.classic; }
-  private cursorPos() { return this.centered() ? { x: W / 2, y: H / 2 } : { x: this.mouse.x, y: this.mouse.y }; }
+  private cursorPos() { return this.centered() ? { x: this.lw / 2, y: H / 2 } : { x: this.mouse.x, y: this.mouse.y }; }
   private hitPoint(): [number, number] {
     if (this.vr.isVR) {
       if (this.centered()) return [Angle.mod(this.angleX.angle, 0, TAU), Angle.mod(-this.angleY.angle, 0, TAU)];
-      const cam = this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov);
+      const cam = this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw);
       return rayAngles(cam, this.mouse.x, this.mouse.y);
     }
     return [this.mouse.x, this.mouse.y];
@@ -701,7 +731,7 @@ export class Engine {
     const ov = this.overlay;
     const toLogical = (e: MouseEvent) => {
       const rect = ov.getBoundingClientRect();
-      return { x: (e.clientX - rect.left) * W / rect.width, y: (e.clientY - rect.top) * H / rect.height };
+      return { x: (e.clientX - rect.left) * this.lw / rect.width, y: (e.clientY - rect.top) * H / rect.height };
     };
     ov.addEventListener('mousemove', (e) => {
       if (document.pointerLockElement === ov) {
@@ -711,21 +741,21 @@ export class Engine {
         } else {
           // 2D screens (menus, close-ups): the locked mouse moves a virtual cursor
           const rect = ov.getBoundingClientRect();
-          this.mouse.x = clamp(this.mouse.x + e.movementX * this.sensitivity * W / rect.width, 0, W - 1);
+          this.mouse.x = clamp(this.mouse.x + e.movementX * this.sensitivity * this.lw / rect.width, 0, this.lw - 1);
           this.mouse.y = clamp(this.mouse.y + e.movementY * this.sensitivity * H / rect.height, 0, H - 1);
           this.mouse.inside = true;
         }
         return;
       }
       const p = toLogical(e);
-      this.mouse.x = clamp(p.x, 0, W - 1);
+      this.mouse.x = clamp(p.x, 0, this.lw - 1);
       this.mouse.y = clamp(p.y, 0, H - 1);
       this.mouse.inside = true;
       if (this.drag && this.vr.isVR) {
         const dx = e.clientX - this.drag.x, dy = e.clientY - this.drag.y;
         if (Math.abs(dx) + Math.abs(dy) > 4) this.drag.moved = true;
         if (this.drag.moved) {
-          const k = this.fov / ov.getBoundingClientRect().width;
+          const k = this.fov * this.lw / (W * ov.getBoundingClientRect().width);
           this.angleX.add(-(e.clientX - this.drag.lx) * k);
           this.angleY.add(-(e.clientY - this.drag.ly) * k);
         }
@@ -757,7 +787,7 @@ export class Engine {
       F7: 7, F8: 8, F9: 9, Enter: 11, Tab: 12 };
     const hotkeys: Record<string, () => void> = {
       F2: () => this.toggleClassic(),
-      F3: () => this.toggleStretch(),
+      F3: () => this.toggleWidescreen(),
       F10: () => this.openMenu(),
       F11: () => platform.toggleFullscreen(),
     };
@@ -783,7 +813,7 @@ export class Engine {
     document.addEventListener('pointerlockerror', () => { this.lockFailed = true; });
     document.addEventListener('pointerlockchange', () => {
       const locked = document.pointerLockElement === ov;
-      if (locked && !this.classic && !this.mouse.inside) { this.mouse.x = W / 2; this.mouse.y = H / 2; }
+      if (locked && !this.classic && !this.mouse.inside) { this.mouse.x = this.lw / 2; this.mouse.y = H / 2; }
       this.classic = locked;
       if (!locked && this.wantClassic && !this.unlockRequested && this.running) {
         // Chromium drops the lock by itself on Esc, often without passing the key on:
@@ -809,14 +839,14 @@ export class Engine {
     this.setClassic(!this.wantClassic);
     this.setMessage(this.wantClassic ? UI.classicMouse : UI.freeMouse);
   }
-  private setStretch(on: boolean) {
-    this.stretch = on;
-    platform.setPref('stretch', on);
+  private setWidescreen(on: boolean) {
+    this.widescreen = on;
+    platform.setPref('widescreen', on);
     this.layout(true);
   }
-  private toggleStretch() {
-    this.setStretch(!this.stretch);
-    this.setMessage(this.stretch ? UI.stretched : UI.original43);
+  private toggleWidescreen() {
+    this.setWidescreen(!this.widescreen);
+    this.setMessage(this.widescreen ? UI.widescreen : UI.original43);
   }
 
   private openMenu() {
@@ -835,7 +865,7 @@ export class Engine {
       volume: (v) => this.setVolume(v),
       sensitivity: (v) => { this.sensitivity = v; },
       classic: (on) => this.setClassic(on),
-      stretch: (on) => this.setStretch(on),
+      widescreen: (on) => this.setWidescreen(on),
     });
     const input = (name: string) => ui.querySelector<HTMLInputElement>(`input[name=${name}]`)!;
     const fs = input('fullscreen');
@@ -886,7 +916,7 @@ export class Engine {
     else if (!this.classic && this.mouse.inside && !this.drag) {
       const m = 14;
       if (this.mouse.x < m) dx = -(m - this.mouse.x) / m;
-      else if (this.mouse.x > W - m) dx = (this.mouse.x - (W - m)) / m;
+      else if (this.mouse.x > this.lw - m) dx = (this.mouse.x - (this.lw - m)) / m;
       if (this.mouse.y < m) dy = -(m - this.mouse.y) / m;
       else if (this.mouse.y > H - m) dy = (this.mouse.y - (H - m)) / m;
     }
@@ -1020,11 +1050,12 @@ export class Engine {
     v.src = src;
     v.volume = this.masterVolume;
     v.style.display = 'block';
+    this.relayout();
     let done = false;
     v.onended = () => { done = true; };
     v.onerror = () => { warn('video not found', src); done = true; };
     try { await v.play(); } catch (e) { warn('video playback failed', src, e); done = true; }
-    this.octx.clearRect(0, 0, W, H);
+    this.octx.clearRect(0, 0, this.lw, H);
     let clicked = false;
     const onClick = () => { if (!this.menu) clicked = true; };
     window.addEventListener('mouseup', onClick);

@@ -16,7 +16,15 @@ class Platform {
   hasSave(slot: number) { return !!this.saves[slot]; }
   readSave(slot: number) { return this.saves[slot] || null; }
   writeSave(slot: number, json: string) { this.saves[slot] = json; return this.api.writeSave(this.game, slot, json); }
-  async loadPrefs() { this.prefs = await this.api.readPrefs(); }
+  async loadPrefs() {
+    this.prefs = await this.api.readPrefs();
+    // "stretch" (fill the window) became "widescreen"; off still means 4:3
+    if ('stretch' in this.prefs) {
+      this.prefs.widescreen ??= this.prefs.stretch;
+      delete this.prefs.stretch;
+      void this.api.writePrefs(this.prefs);
+    }
+  }
   pref(name: string, def: boolean): boolean;
   pref(name: string, def: number): number;
   pref(name: string, def: boolean | number) {

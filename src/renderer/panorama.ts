@@ -5,7 +5,7 @@ import FS from './shaders/panorama.frag.glsl';
 import VS from './shaders/panorama.vert.glsl';
 import { clamp, H, TAU, W } from './util';
 
-export interface Camera { start: number[]; incX: number[]; incY: number[] }
+export interface Camera { start: number[]; incX: number[]; incY: number[]; width: number }
 
 export class PanoramaRenderer {
   private gl: WebGLRenderingContext;
@@ -46,8 +46,7 @@ export class PanoramaRenderer {
       gl.uniform1i(gl.getUniformLocation(prog, 'f' + i), i);
       this.tex.push(t);
     }
-    gl.uniform2f(gl.getUniformLocation(prog, 'uRes'), W, H);   // constant for the life of the program
-    const names = { start: 'uStart', incX: 'uIncX', incY: 'uIncY', incYf: 'uIncYf', waveT: 'uWaveT', xScale: 'uXScale' };
+    const names = { res: 'uRes', start: 'uStart', incX: 'uIncX', incY: 'uIncY', incYf: 'uIncYf', waveT: 'uWaveT', xScale: 'uXScale' };
     this.u = Object.fromEntries(Object.entries(names).map(([k, n]) => [k, gl.getUniformLocation(prog, n)]));
   }
   upload(i: number, src: TexImageSource) {
@@ -60,6 +59,7 @@ export class PanoramaRenderer {
   draw(cam: Camera, waveT = -1, xScale = 1) {
     const gl = this.gl, c = this.canvas;
     gl.viewport(0, 0, c.width, c.height);
+    gl.uniform2f(this.u.res, cam.width, H);
     gl.uniform3fv(this.u.start, cam.start);
     gl.uniform3fv(this.u.incX, cam.incX);
     gl.uniform3fv(this.u.incY, cam.incY);
@@ -70,7 +70,7 @@ export class PanoramaRenderer {
   }
 }
 
-export function camera(ax: number, ay: number, fov: number): Camera {
+export function camera(ax: number, ay: number, fov: number, width = W): Camera {
   const f = [Math.cos(ax) * Math.sin(-ay), Math.sin(ax) * Math.sin(-ay), Math.cos(-ay)];
   const fl = Math.hypot(f[0], f[1], f[2]);
   f[0] /= fl; f[1] /= fl; f[2] /= fl;
@@ -78,11 +78,12 @@ export function camera(ax: number, ay: number, fov: number): Camera {
   const rl = Math.hypot(r[0], r[1]) || 1;
   r[0] /= rl; r[1] /= rl;
   const u = [f[1] * r[2] - f[2] * r[1], f[2] * r[0] - f[0] * r[2], f[0] * r[1] - f[1] * r[0]];
-  const gx = Math.tan(fov / 2), gy = gx * H / W;
-  const incX = r.map((v) => v * 2 * gx / W);
+  // Hor+: the original vertical field of view, so a wider view only adds to the sides
+  const gy = Math.tan(fov / 2) * H / W, gx = gy * width / H;
+  const incX = r.map((v) => v * 2 * gx / width);
   const incY = u.map((v) => v * 2 * gy / H);
   const start = [0, 1, 2].map((i) => f[i] - r[i] * gx - u[i] * gy);
-  return { start, incX, incY };
+  return { start, incX, incY, width };
 }
 
 export function rayAngles(cam: Camera, lx: number, ly: number): [number, number] {

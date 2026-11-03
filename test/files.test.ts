@@ -89,7 +89,7 @@ test('readDisc reads .iso and raw Mode 1 / Mode 2 images, with Joliet names', ()
 
 const d1 = [iso({ 'Install/script.pak': '', 'Data/0M1Script.pak': '' }), iso({ '0M2Script.pak': '' }, { mode: 2 })];
 const d2 = [iso({ 'Install/script.pak': '', 'DataM1/0M1Script.pak': '' }), iso({ 'DataM2/0M2Script.pak': '' })];
-const ids = (dir: string) => findGames(dir).map((g) => [g.id, path.relative(tmp, g.dir)]);
+const ids = (dir: string) => findGames(dir).map((g) => [g.id, path.relative(tmp, g.dir).split(path.sep).join('/')]);
 
 test('findGames tells the two games apart, installed or on CD', () => {
   assert.deepEqual(ids(tree('d1', { 'Script.LST': '' })), [['dracula1', 'd1']]);

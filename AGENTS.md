@@ -332,11 +332,17 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   - Losing the lock without a recent Esc keydown is treated as Esc (key code 0),
     because Chromium often eats the key.
 - **4:3 <-> widescreen easing.** `layout(true)`, called by the `F3` toggle and by
-  `relayout()`, adds `#box.easing` so the box width/height transition over
-  `LAYOUT_EASE_MS` (450 ms). Window resizes call `layout()` without
-  it, so dragging a window edge never lags. While easing, the WebGL canvas keeps the
-  larger of the old and new sizes (no blurry frame mid-way); the exact size is set on
-  `transitionend`, with a timer as fallback. The backdrop fades with it (`.off`).
+  `relayout()`, eases the box over `LAYOUT_EASE_MS` (450 ms, ease-out cubic). It is
+  timed in JS from `performance.now()` (`stepLayout`, on its own `requestAnimationFrame`
+  and at the start of `renderScene`), not by a CSS transition: both directions then
+  take exactly as long even when the first frames stutter, and every frame sets `lw`
+  from the box's current shape (`setBox`), so a panorama gains or loses its sides
+  instead of stretching. 2D screens stay 4:3 in the middle (`object-fit: contain` on
+  `#screen2d`, hit tests shifted by `ox()`); movies already are (`#movie`). Window
+  resizes call `layout()` without it, so dragging a window edge never lags. While
+  easing, the WebGL canvas keeps the larger of the old and new sizes (no blurry frame
+  mid-way); `renderScene` applies `glSize` right before drawing, since resizing clears
+  the canvas. The backdrop fades with it (`.off`).
 - **4:3 backdrop.** Whenever the box is 4:3 (`fill` off), `#backdrop` (behind `#box`)
   shows the current frame (video, panorama or 2D screen) cropped to the window's
   aspect, refreshed at

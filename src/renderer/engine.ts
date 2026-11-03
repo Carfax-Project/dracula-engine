@@ -36,11 +36,11 @@ interface View { ax: number; ay: number; fov: number }
 
 export interface GameInfo { id: GameId; title: string; base: string; index: GameIndex }
 
-function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | null) {
+function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | null, ox: number) {
   o.strokeStyle = '#ff0';
   o.lineWidth = 1;
   if (!cam) {
-    for (const r of regs) o.strokeRect(r[0], r[2], r[1] - r[0], r[3] - r[2]);
+    for (const r of regs) o.strokeRect(r[0] + ox, r[2], r[1] - r[0], r[3] - r[2]);
     return;
   }
   o.fillStyle = 'rgba(255,255,0,0.25)';
@@ -52,7 +52,7 @@ function drawRegions(o: CanvasRenderingContext2D, regs: Region[], cam: Camera | 
 
 const NO_TIMER = () => ({ flags: 0, t: 0, initial: 0, show: false, warp: '' });
 
-/** Length of the 4:3 <-> widescreen easing; matches #box.easing in index.html. */
+/** Length of the 4:3 <-> widescreen easing; matches the #backdrop fade in index.html. */
 const LAYOUT_EASE_MS = 450;
 
 export class Engine {
@@ -111,7 +111,9 @@ export class Engine {
   private prevView: View | null = null;
   private pendingView: View | null = null;
   private debugWarp: string | null = null;
-  private layoutTimer = 0;
+  private box: [number, number] = [0, 0];
+  private boxAnim: { from: [number, number]; to: [number, number]; start: number } | null = null;
+  private glSize: [number, number] = [1, 1];
 
   private events: Ev[] = [];
   private mouse = { x: W / 2, y: H / 2, inside: false };
@@ -548,36 +550,52 @@ export class Engine {
     const scale = Math.min(vw / W, vh / H);
     const w = this.fill ? vw : Math.floor(W * scale);
     const h = this.fill ? vh : Math.floor(H * scale);
-    const lw = this.fill ? Math.round(H * vw / vh) : W;
-    if (lw !== this.lw) {
-      this.mouse.x = clamp(this.mouse.x + (lw - this.lw) / 2, 0, lw - 1);
-      this.lw = this.overlay.width = lw;
-    }
-    const box = $('box');
-    box.classList.toggle('easing', animate);
-    box.style.width = w + 'px';
-    box.style.height = h + 'px';
     // While easing, keep the larger render size so the frame never turns blurry
     // mid-animation; the exact size is set once the box has settled.
     const dpr = window.devicePixelRatio || 1;
     const cw = Math.max(1, Math.round(w * dpr)), ch = Math.max(1, Math.round(h * dpr));
-    this.glCanvas.width = animate ? Math.max(cw, this.glCanvas.width) : cw;
-    this.glCanvas.height = animate ? Math.max(ch, this.glCanvas.height) : ch;
-    clearTimeout(this.layoutTimer);
-    if (!animate) return;
-    // Settle when the easing actually ends (it can start a frame late, after the
-    // canvas reallocation); the timer is only a fallback if no event arrives.
-    const settle = () => { box.removeEventListener('transitionend', onEnd); clearTimeout(this.layoutTimer); this.layout(); };
-    const onEnd = (e: TransitionEvent) => { if (e.target === box && e.propertyName === 'width') settle(); };
-    box.addEventListener('transitionend', onEnd);
-    this.layoutTimer = window.setTimeout(settle, LAYOUT_EASE_MS + 400);
+    this.glSize = animate ? [Math.max(cw, this.glSize[0]), Math.max(ch, this.glSize[1])] : [cw, ch];
+    // Timed here, not by a CSS transition: both directions then take exactly as long
+    // however the first frames stutter, and every frame knows the box's shape.
+    const anim = animate && this.box[0] ? { from: this.box, to: [w, h] as [number, number], start: performance.now() } : null;
+    this.boxAnim = anim;
+    if (!anim) { this.setBox(w, h); return; }
+    const tick = () => { if (this.boxAnim === anim) { this.stepLayout(); requestAnimationFrame(tick); } };
+    tick();
   }
+  private stepLayout() {
+    const a = this.boxAnim;
+    if (!a) return;
+    const t = Math.min(1, (performance.now() - a.start) / LAYOUT_EASE_MS), e = 1 - (1 - t) ** 3;
+    if (t < 1) this.setBox(a.from[0] + (a.to[0] - a.from[0]) * e, a.from[1] + (a.to[1] - a.from[1]) * e);
+    else { this.boxAnim = null; this.layout(); }
+  }
+  // The logical view follows the box's shape, also mid-easing: a panorama gains or
+  // loses its sides instead of stretching, and a 2D screen stays 4:3 in the middle.
+  private setBox(w: number, h: number) {
+    this.box = [w, h];
+    const box = $('box');
+    box.style.width = w + 'px';
+    box.style.height = h + 'px';
+    const lw = Math.max(W, Math.round(H * w / h));
+    if (lw !== this.lw) {
+      this.mouse.x = clamp(this.mouse.x + (lw - this.lw) / 2, 0, lw - 1);
+      this.lw = this.overlay.width = lw;
+    }
+  }
+  // where the middle 640 columns start: 2D screens and Dracula 2's HUD live there
+  private ox() { return Math.floor((this.lw - W) / 2); }
   private wantFill() {
     return this.widescreen && this.vr.isVR && this.video.style.display !== 'block' && innerWidth * H > innerHeight * W;
   }
   private relayout() { if (this.wantFill() !== this.fill) this.layout(true); }
   private renderScene(dt: number) {
     this.relayout();
+    this.stepLayout();
+    // resized here, right before drawing, since resizing clears it
+    const [gw, gh] = this.glSize;
+    if (this.glCanvas.width !== gw) this.glCanvas.width = gw;
+    if (this.glCanvas.height !== gh) this.glCanvas.height = gh;
     this.tickAnims(dt);
     this.glCanvas.style.visibility = this.vr.isVR ? 'visible' : 'hidden';
     this.screen.style.visibility = this.vr.isVR ? 'hidden' : 'visible';
@@ -611,12 +629,11 @@ export class Engine {
       o.drawImage(this.snapshot, Math.floor((this.lw - this.snapshot.width) / 2), 0);
       o.globalAlpha = 1;
     }
-    // Dracula 2's HUD is laid out for 640x480, so it stays in the middle of a wider view
-    const ox = Math.floor((this.lw - W) / 2);
+    const ox = this.ox();
     if (this.imageOverlay) this.drawImageOverlay(ox);
     this.drawTimer(ox);
     if (DEV && this.showRegions && this.regions) {
-      drawRegions(this.octx, this.regions, this.vr.isVR ? this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw) : null);
+      drawRegions(this.octx, this.regions, this.vr.isVR ? this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw) : null, ox);
     }
     if (this.fade < 0) {
       o.fillStyle = 'rgba(0,0,0,' + clamp(-this.fade / 255, 0, 1) + ')';
@@ -722,7 +739,7 @@ export class Engine {
       const cam = this.cam || camera(this.angleX.angle, this.angleY.angle, this.fov, this.lw);
       return rayAngles(cam, this.mouse.x, this.mouse.y);
     }
-    return [this.mouse.x, this.mouse.y];
+    return [this.mouse.x - this.ox(), this.mouse.y];
   }
   private regionHit(r: Region, p: [number, number]) { return this.vr.isVR ? contains3D(r, p[0], p[1]) : contains2D(r, p[0], p[1]); }
 

@@ -9,8 +9,6 @@
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden; }
   body { display: flex; align-items: center; justify-content: center; font-family: system-ui, sans-serif; }
   #box { position: relative; z-index: 1; background: #000; width: 100vw; height: 100vh; }
-  /* eases between 4:3 and widescreen (LAYOUT_EASE_MS in engine.ts) */
-  #box.easing { transition: width .45s cubic-bezier(.22,.7,.26,1), height .45s cubic-bezier(.22,.7,.26,1); }
   /* 4:3 mode: the bars show the current frame, blurred and dark (backdrop.ts).
      Scaled up a little so the blur never fades to black at the window edges. */
   #backdrop { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 0;
@@ -20,6 +18,8 @@
   #backdrop.off { opacity: 0; visibility: hidden; transition: opacity .45s ease, visibility 0s .45s; }
   #box canvas, #box video { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
   #box canvas { display: block; }
+  /* stays 4:3 while the box eases to or from widescreen */
+  #screen2d { object-fit: contain; }
   #overlay { image-rendering: pixelated; cursor: none; }
   #movie { background: #000; object-fit: contain; display: none; }
   #ui { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;

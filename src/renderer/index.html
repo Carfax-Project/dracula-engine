@@ -122,7 +122,6 @@
   #ui .sheet p.note { margin: 6px 0 16px; min-height: 1em; font-size: 11.5px; color: #8f8573; }
   #ui .sheet p.note.ok { color: #7fa36a; }
   #ui .sheet p.note.bad { color: #c2714f; }
-  #ui .sheet .opt-tag { font-size: 10px; letter-spacing: .12em; color: #6d6457; margin-left: 6px; }
   #ui .sheet .progress { margin: 4px 0 16px; }
   #ui .sheet .progress .stage { display: flex; justify-content: space-between; font-size: 12.5px; color: #d8c9a3; margin-bottom: 8px; }
   #ui .sheet .progress .count { color: #9c917c; font-variant-numeric: tabular-nums; }
@@ -274,17 +273,15 @@
   <div class="sheet import" role="dialog" aria-modal="true" aria-label="Import a game">
     <h2>Import a game</h2>
     <p class="lead">Point to an installed copy of Dracula: The Resurrection or Dracula 2 (the GOG
-      version, for example). It is converted once into a new folder the app plays from; the
-      installed game is never changed. This takes a while, mostly for the movies.</p>
+      version, for example), to a folder with their CD images (.img, .bin or .iso), or to a
+      folder holding both games, which are then imported one after the other. Each is converted
+      once into a new folder the app plays from; the original files are never changed. This
+      takes a while, mostly for the movies.</p>
     <div class="form">
       <h3>Game files</h3>
       <div class="pickline"><div class="where"><span class="path" data-path="game"></span></div>
         <button class="sec" data-pick="game">Choose…</button></div>
       <p class="note" data-note="game"></p>
-      <h3>Translation <span class="opt-tag">optional</span></h3>
-      <div class="pickline"><div class="where"><span class="path" data-path="overlay"></span></div>
-        <button class="sec" data-pick="overlay">Choose…</button><button class="sec" data-clear="overlay">Clear</button></div>
-      <p class="note">A folder whose files replace the game's ones with the same name, such as a dubbed CD.</p>
       <h3>Save to</h3>
       <div class="pickline"><div class="where"><span class="path" data-path="dest"></span></div>
         <button class="sec" data-pick="dest">Choose…</button></div>

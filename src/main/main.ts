@@ -10,8 +10,8 @@ import { app, BrowserWindow, dialog, ipcMain, protocol, utilityProcess, type Uti
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
-import { findGame } from '../importer/files';
-import { DATA_FORMAT, type GameEntry, type GameId, type ImportResult, type ImportState } from '../shared/format';
+import { findGames, type GameSource } from '../importer/files';
+import { DATA_FORMAT, type GameEntry, type GameId, type ImportGame, type ImportResult, type ImportState } from '../shared/format';
 import { UI } from '../shared/strings';
 
 const GAME_IDS: readonly GameId[] = ['dracula1', 'dracula2'];
@@ -217,45 +217,43 @@ function setupIpc(win: () => BrowserWindow | null) {
   });
 
   // The renderer never passes paths: it asks for a dialog, and main keeps what was picked.
-  const picks: { game?: { path: string; id: GameId }; overlay?: string; dest?: string } = {};
+  const picks: { source?: string; games: GameSource[]; dest?: string } = { games: [] };
   let importer: UtilityProcess | null = null;
-  const pickTitles = { game: UI.importGameDialog, overlay: UI.importOverlayDialog, dest: UI.importDestDialog };
-
-  ipcMain.handle('importState', (): ImportState => {
-    const dest = picks.dest ?? readConfig().root ?? defaultGamesDir();
-    const target = picks.game && dest ? path.join(dest, picks.game.id) : null;
-    return { game: picks.game ?? null, overlay: picks.overlay ?? null, dest, target };
+  let cancelled = false;
+  const pickTitles = { game: UI.importGameDialog, dest: UI.importDestDialog };
+  const importDest = () => picks.dest ?? readConfig().root ?? defaultGamesDir();
+  const importGames = (dest = importDest()) => picks.games.map((g): ImportGame => {
+    const target = path.join(dest, g.id);
+    return { id: g.id, path: g.dir, target, exists: fs.existsSync(target) };
   });
+
+  ipcMain.handle('importState', (): ImportState => ({ source: picks.source ?? null, games: importGames(), dest: importDest() }));
   ipcMain.handle('importPick', async (_e, kind: unknown) => {
-    if (kind !== 'game' && kind !== 'overlay' && kind !== 'dest') return { cancelled: true };
+    if (kind !== 'game' && kind !== 'dest') return { cancelled: true };
     const w = win();
     const opts: Electron.OpenDialogOptions = { title: pickTitles[kind], properties: ['openDirectory', 'createDirectory'] };
     const r = w ? await dialog.showOpenDialog(w, opts) : await dialog.showOpenDialog(opts);
     if (r.canceled || !r.filePaths[0]) return { cancelled: true };
     const dir = r.filePaths[0];
     if (kind === 'game') {
-      const id = findGame(dir);
-      if (!id) return { error: UI.importNotAGame };
-      picks.game = { path: dir, id };
-    } else picks[kind] = dir;
+      const games = findGames(dir);
+      if (!games.length) return { error: UI.importNotAGame };
+      picks.source = dir;
+      picks.games = games;
+    } else picks.dest = dir;
     return { ok: true };
   });
-  ipcMain.handle('importClear', (_e, kind: unknown) => { if (kind === 'overlay') delete picks.overlay; });
-  ipcMain.on('importCancel', () => importer?.postMessage({ type: 'cancel' }));
+  ipcMain.on('importCancel', () => { cancelled = true; importer?.postMessage({ type: 'cancel' }); });
 
   // Written to <dest>/<game>.partial (an interrupted import resumes there) and renamed
   // once complete, so a half-converted folder never looks like a game.
-  ipcMain.handle('importStart', () => new Promise<ImportResult>((resolve) => {
-    const game = picks.game, dest = picks.dest ?? readConfig().root ?? defaultGamesDir();
-    if (importer) return resolve({ error: UI.importBusy });
-    if (!game || !dest) return resolve({ error: UI.importIncomplete });
+  const importOne = (game: GameSource, dest: string) => new Promise<ImportResult>((resolve) => {
     const target = path.join(dest, game.id), out = target + '.partial';
-    if (fs.existsSync(target)) return resolve({ error: UI.importExists(target) });
     const child = utilityProcess.fork(path.join(__dirname, 'import-worker.js'), [], { serviceName: 'Dracula importer' });
     importer = child;
     const finish = (r: ImportResult) => { importer = null; child.kill(); resolve(r); };
     child.on('message', (m) => {
-      if (m.type === 'progress') win()?.webContents.send('importProgress', { stage: m.stage, done: m.done, total: m.total });
+      if (m.type === 'progress') win()?.webContents.send('importProgress', { game: game.id, stage: m.stage, done: m.done, total: m.total });
       else if (m.type === 'log') console.log('[import]', m.message);
       else if (m.type === 'cancelled') finish({ cancelled: true });
       else if (m.type === 'error') finish({ error: m.message });
@@ -263,12 +261,34 @@ function setupIpc(win: () => BrowserWindow | null) {
         try { fs.renameSync(out, target); } catch (e) { return finish({ error: (e as Error).message }); }
         const cfg = readConfig();
         writeConfig({ root: cfg.root ?? dest, games: { ...cfg.games, [game.id]: target } });
-        finish({ ok: true, game: game.id });
+        finish({ ok: true });
       }
     });
     child.on('exit', (code) => { if (importer === child) finish({ error: UI.importCrashed(code) }); });
-    child.postMessage({ type: 'start', game: game.path, out, overlays: picks.overlay ? [picks.overlay] : [] });
-  }));
+    child.postMessage({ type: 'start', game, out });
+  });
+
+  let running = false;
+  ipcMain.handle('importStart', async (): Promise<ImportResult> => {
+    if (running) return { error: UI.importBusy };
+    const dest = importDest();
+    if (!picks.games.length || !dest) return { error: UI.importIncomplete };
+    const games = importGames(dest);
+    const todo = picks.games.filter((g) => !games.find((x) => x.id === g.id)!.exists);
+    if (!todo.length) return { error: UI.importExists(games.map((g) => g.target)) };
+    running = true;
+    cancelled = false;
+    const done: GameId[] = [];
+    try {
+      for (const g of todo) {
+        if (cancelled) return { cancelled: true, games: done };
+        const r = await importOne(g, dest);
+        if (!r.ok) return { ...r, games: done };
+        done.push(g.id);
+      }
+      return { ok: true, games: done };
+    } finally { running = false; }
+  });
 
   ipcMain.on('setFullscreen', (_e, on: boolean) => win()?.setFullScreen(!!on));
   ipcMain.handle('isFullscreen', () => !!win()?.isFullScreen());

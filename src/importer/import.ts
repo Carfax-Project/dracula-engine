@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { DATA_FORMAT, type GameId, type GameIndex, type ImportStage, type Region, type VrMeta } from '../shared/format';
-import { type FileIndex, findGame, folderOf, indexFiles } from './files';
+import { type FileIndex, type GameFile, type GameSource, indexFiles } from './files';
 import { opus, webm, webmFromFrames, webpLossless, webpPhoto } from './ffmpeg';
 import { isRawMovie, RawMovie } from './fourxm';
 import { decodeArn, decodePcx, parseTst, unpackPak } from './formats';
@@ -15,9 +15,8 @@ const TITLES: Record<GameId, string> = {
 };
 
 export interface ImportOptions {
-  game: string;
+  game: GameSource;
   out: string;
-  overlays?: string[];
   videos?: boolean;
   log?: (msg: string) => void;
   progress?: (stage: ImportStage, done: number, total: number) => void;
@@ -35,22 +34,22 @@ function writeAtomic(file: string, data: string | Uint8Array) {
   fs.renameSync(file + '.part', file);
 }
 
-function importScripts(game: string, files: FileIndex, out: string, log: (m: string) => void) {
-  const sources = new Map<string, string>();
-  for (const [key, p] of [...files].sort()) if (key.endsWith('.lst')) sources.set(stem(key), p);
-  for (const [key, p] of [...files].sort()) if (key.endsWith('.pak') && !sources.has(stem(key))) sources.set(stem(key), p);
+function importScripts(files: FileIndex, out: string, log: (m: string) => void) {
+  const sources = new Map<string, GameFile>();
+  for (const [key, f] of [...files].sort()) if (key.endsWith('.lst')) sources.set(stem(key), f);
+  for (const [key, f] of [...files].sort()) if (key.endsWith('.pak') && !sources.has(stem(key))) sources.set(stem(key), f);
   fs.mkdirSync(path.join(out, 'scripts'), { recursive: true });
   const folders = new Map<string, string>();
-  for (const [name, p] of [...sources].sort()) {
-    let raw: Uint8Array = fs.readFileSync(p);
-    if (p.toLowerCase().endsWith('.pak')) {
+  for (const [name, f] of [...sources].sort()) {
+    let raw: Uint8Array = f.read();
+    if (f.name.toLowerCase().endsWith('.pak')) {
       if (Buffer.from(raw.subarray(0, 4)).toString('latin1') !== 'PAKF') continue;
       raw = unpackPak(raw).data;
     }
     const { script, warnings } = parseLst(raw);
     for (const w of warnings) log(`warning ${name}: ${w}`);
     writeAtomic(path.join(out, 'scripts', name + '.js'), put('script', name, script));
-    folders.set(name, folderOf(game, p));
+    folders.set(name, f.folder);
   }
   return folders;
 }
@@ -60,23 +59,22 @@ async function importCursors(files: FileIndex, out: string) {
   fs.mkdirSync(path.join(out, 'cursors'), { recursive: true });
   const keys = [...files.keys()].filter((k) => k.endsWith('.pcx'));
   await Promise.all(keys.map((key) => {
-    const { img, alpha } = decodePcx(fs.readFileSync(files.get(key)!));
+    const { img, alpha } = decodePcx(files.get(key)!.read());
     return webpLossless(img, path.join(out, 'cursors', stem(key) + '.webp'), alpha);
   }));
   return keys.length;
 }
 
 // The copy in the game folder is the one the original engine reads, not DataM2's.
-async function importArn(game: string, out: string) {
-  const root = new Map(fs.readdirSync(game).map((n) => [n.toLowerCase(), path.join(game, n)]));
+async function importArn(root: FileIndex, out: string) {
   const header = root.get('bdataheader.vit');
   if (!header) return 0;
   const archives = new Map<number, Uint8Array | null>();
   const archive = (n: number) => {
-    if (!archives.has(n)) { const p = root.get(`bdata${n}.arn`); archives.set(n, p ? fs.readFileSync(p) : null); }
+    if (!archives.has(n)) archives.set(n, root.get(`bdata${n}.arn`)?.read() ?? null);
     return archives.get(n)!;
   };
-  const images = decodeArn(fs.readFileSync(header), archive);
+  const images = decodeArn(header.read(), archive);
   fs.mkdirSync(path.join(out, 'arn'), { recursive: true });
   await Promise.all([...images].map(([name, img]) => webpLossless(img, path.join(out, 'arn', stem(name.toLowerCase()) + '.webp'))));
   return images.size;
@@ -85,10 +83,10 @@ async function importArn(game: string, out: string) {
 async function importSounds(files: FileIndex, out: string, log: (m: string) => void) {
   fs.mkdirSync(path.join(out, 'sound'), { recursive: true });
   let n = 0;
-  await Promise.all([...files].filter(([key]) => key.endsWith('.wav')).map(async ([key, p]) => {
+  await Promise.all([...files].filter(([key]) => key.endsWith('.wav')).map(async ([key, f]) => {
     const file = path.join(out, 'sound', stem(key) + '.opus');
     if (fs.existsSync(file)) { n++; return; }
-    try { await opus(p, file + '.part'); fs.renameSync(file + '.part', file); n++; }
+    try { await opus(f.read(), file + '.part'); fs.renameSync(file + '.part', file); n++; }
     catch (e) { log(`!! ${key}: ${(e as Error).message}`); }
   }));
   return n;
@@ -141,9 +139,9 @@ async function importMovies(files: FileIndex, out: string, opts: ImportOptions, 
     const file = path.join(out, 'movie', stem(key) + '.webm');
     try {
       if (!fs.existsSync(file)) {
-        const src = files.get(key)!, data = fs.readFileSync(src);
+        const data = files.get(key)!.read();
         if (isRawMovie(data)) await rawMovieToWebm(data, file + '.part', opts.signal);
-        else await webm(src, file + '.part');
+        else await webm(data, file + '.part');
         fs.renameSync(file + '.part', file);
       }
       ok++;
@@ -158,19 +156,19 @@ async function importMovies(files: FileIndex, out: string, opts: ImportOptions, 
 
 function importTests(files: FileIndex) {
   const tests: Record<string, Region[]> = {};
-  for (const [key, p] of files) if (key.endsWith('.tst')) tests[stem(key)] = parseTst(fs.readFileSync(p));
+  for (const [key, f] of files) if (key.endsWith('.tst')) tests[stem(key)] = parseTst(f.read());
   return tests;
 }
 
 // Scenes already written are kept, so an interrupted import resumes.
-async function importVr(key: string, file: string, out: string): Promise<GameIndex['vr'][string]> {
+async function importVr(key: string, file: GameFile, out: string): Promise<GameIndex['vr'][string]> {
   const dir = path.join(out, 'vr', stem(key));
   const metaFile = path.join(dir, 'meta.json');
   if (fs.existsSync(metaFile)) {
     const m: VrMeta = JSON.parse(fs.readFileSync(metaFile, 'utf8'));
     return { type: m.type, anims: m.animations.map((a) => a.name) };
   }
-  const vr = decodeVr(fs.readFileSync(file));
+  const vr = decodeVr(file.read());
   fs.mkdirSync(dir, { recursive: true });
   const names = vr.type === 'panorama' ? vr.images.map((_, i) => `face${i}.webp`) : ['image.webp'];
   const jobs = vr.images.map((img, i) => webpPhoto(img, path.join(dir, names[i])));
@@ -195,18 +193,16 @@ async function importVr(key: string, file: string, out: string): Promise<GameInd
 export async function importGame(opts: ImportOptions) {
   const log = opts.log ?? (() => {});
   const progress = opts.progress ?? (() => {});
-  const id = findGame(opts.game);
-  if (!id) throw new Error(`not a Dracula game folder: ${opts.game}`);
-  const { index: files, variants, skipped } = indexFiles(opts.game, opts.overlays);
+  const { id } = opts.game;
+  const { index: files, root, variants } = indexFiles(opts.game);
   if (![...files.keys()].some((k) => k.endsWith('.lst') || k.endsWith('.pak'))) {
-    throw new Error(`no scripts (.lst/.pak) in ${opts.game}`);
+    throw new Error(`no scripts (.lst/.pak) in ${opts.game.dir}`);
   }
-  for (const p of skipped) log(`ignored (looks damaged): ${p}`);
   log(`${TITLES[id]}: ${files.size} files`);
   fs.mkdirSync(opts.out, { recursive: true });
   progress('files', 0, 1);
 
-  const scripts = importScripts(opts.game, files, opts.out, log);
+  const scripts = importScripts(files, opts.out, log);
   log(`scripts: ${scripts.size}`);
 
   // A script's own folder wins over the game folder: its differing copies are written
@@ -215,10 +211,10 @@ export async function importGame(opts: ImportOptions) {
   const byScript: Record<string, Record<string, string>> = {};
   for (const [name, folder] of scripts) {
     const map: Record<string, string> = {};
-    for (const [key, p] of variants.get(folder) ?? []) {
+    for (const [key, f] of variants.get(folder) ?? []) {
       if (!VARIANT_TYPES.some((e) => key.endsWith(e))) continue;
       map[key] = variantName(key, folder);
-      all.set(map[key], p);
+      all.set(map[key], f);
     }
     if (Object.keys(map).length) byScript[name] = map;
   }
@@ -226,7 +222,7 @@ export async function importGame(opts: ImportOptions) {
   const tests = importTests(all);
   log(`click regions: ${Object.keys(tests).length}`);
   log(`cursors: ${await importCursors(all, opts.out)}`);
-  const arn = await importArn(opts.game, opts.out);
+  const arn = await importArn(root, opts.out);
   if (arn) log(`.arn pictures: ${arn}`);
   log(`sounds: ${await importSounds(all, opts.out, log)}`);
 

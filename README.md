@@ -19,7 +19,7 @@
 ## Features
 
 - **Both games, one app** — pick a folder once and both are found on their own
-- **Imports straight from the installed game** — no extra tools, and the original files are never touched
+- **Imports straight from the installed game or its CD images** — no extra tools, and the original files are never touched
 - **Smooth 360° panoramas** rendered with WebGL, at any window size
 - **Original or free-cursor mouse** — the mouse turns the view as in the original, or drag to look around
 - **Skip the intro** if you like, and go straight to the menu
@@ -49,7 +49,7 @@
 
 Dracula Engine requires game data files from your own copies of Dracula: The Resurrection and/or Dracula 2: The Last Sanctuary.
 
-Install the game (the GOG version works), then open **Settings → Import from game files…**, choose the installed game's folder and, if you like, where to save the converted copy (by default `%LOCALAPPDATA%\Dracula\Games` on Windows and `~/.local/share/Dracula/games` on Linux). The import converts everything once, which takes about a quarter of an hour, mostly for the movies; the installed game is never changed. A translation folder (for example a dubbed CD) can be given too: its files replace the game's ones with the same name.
+Install the game (the GOG version works), or put the images of its CDs (`.iso`, `.img` or `.bin`) in a folder. Then open **Settings → Import from game files…**, choose the game's folder (or one holding both games, which are then imported one after the other) and, if you like, where to save the converted copy (by default `%LOCALAPPDATA%\Dracula\Games` on Windows and `~/.local/share/Dracula/games` on Linux). The import converts everything once, which takes about a quarter of an hour, mostly for the movies; the original files are never changed.
 
 To run the engine in development mode:
 

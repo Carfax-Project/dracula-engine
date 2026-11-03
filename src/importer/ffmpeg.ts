@@ -66,13 +66,15 @@ export function webpLossless(img: Rgb, file: string, alpha?: Uint8Array) {
     '-pix_fmt', 'bgra', '-frames:v', '1', '-f', 'webp', file], data);
 }
 
-const VIDEO = ['-c:v', 'libvpx-vp9', '-crf', '30', '-b:v', '0', '-row-mt', '1', '-deadline', 'good', '-cpu-used', '2',
+// Realtime is about 8x faster than good/2 at the same quality for these 640x480 movies,
+// for files about 30% larger.
+const VIDEO = ['-c:v', 'libvpx-vp9', '-crf', '30', '-b:v', '0', '-row-mt', '1', '-deadline', 'realtime', '-cpu-used', '8',
   '-pix_fmt', 'yuv420p', '-c:a', 'libopus', '-b:a', '96k', '-f', 'webm'];
 
-export const webm = (movie: string, file: string) => ffmpeg(['-i', movie, ...VIDEO, file]);
+export const webm = (movie: Uint8Array, file: string) => ffmpeg(['-i', '-', ...VIDEO, file], movie);
 
 export const webmFromFrames = (w: number, h: number, fps: number, wav: string, file: string, frames: Feed) =>
   ffmpeg([...raw(w, h, 'rgb24').slice(0, -2), '-r', fps.toFixed(3), '-i', '-', '-i', wav, ...VIDEO, file], frames);
 
-export const opus = (wav: string, file: string) =>
-  ffmpeg(['-i', wav, '-c:a', 'libopus', '-b:a', '64k', '-f', 'opus', file]);
+export const opus = (wav: Uint8Array, file: string) =>
+  ffmpeg(['-i', '-', '-c:a', 'libopus', '-b:a', '64k', '-f', 'opus', file], wav);

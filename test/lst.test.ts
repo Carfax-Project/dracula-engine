@@ -57,6 +57,23 @@ test('plugin blocks and labels', () => {
   });
 });
 
+test('the next script loses its disc number', () => {
+  const { script } = parseLst(lst(
+    '[warp]=A01.vr', '[test]=1', 'plugin',
+    'MultiCD_Set_Next_Script("2:0M2Script.lst")',
+    'MultiCD_Set_Next_Script("1:Data\\0M1Script.pak")',
+    'MultiCD_Set_Next_Script("")',
+    'endplugin',
+  ));
+  assert.deepEqual(script.warps[0].tests[0].cmds[0], {
+    op: 'block', cmds: [
+      { op: 'nextscript', file: '0M2Script.lst' },
+      { op: 'nextscript', file: 'Data\\0M1Script.pak' },
+      { op: 'nextscript', file: '' },
+    ],
+  });
+});
+
 test('unknown commands warn instead of failing', () => {
   const { warnings } = parseLst(lst('[warp]=A01.vr', '[test]=1', 'frobnicate 3'));
   assert.equal(warnings.length, 1);

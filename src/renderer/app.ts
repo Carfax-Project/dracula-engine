@@ -128,6 +128,7 @@ function openImport(reload: () => void) {
   const q = <T extends Element = HTMLElement>(sel: string) => scrim.querySelector<T>(sel)!;
   const start = q<HTMLButtonElement>('button.start'), stop = q<HTMLButtonElement>('button.stop');
   const closeBtn = q<HTMLButtonElement>('button.close'), msg = q('p.msg');
+  const title = (id: GameId) => GAMES.find((g) => g.id === id)!.title;
   let running = false, imported = false;
 
   const note = (field: string, text: string, kind = '') => {
@@ -137,13 +138,12 @@ function openImport(reload: () => void) {
   };
   const refresh = async () => {
     const s = await platform.importState();
-    q('[data-path=game]').textContent = s.game?.path ?? UI.importNoGame;
-    q('[data-path=overlay]').textContent = s.overlay ?? UI.importNoOverlay;
+    q('[data-path=game]').textContent = s.source ?? UI.importNoGame;
     q('[data-path=dest]').textContent = s.dest;
-    if (s.game) note('game', UI.importFound(GAMES.find((g) => g.id === s.game!.id)!.title), 'ok');
-    note('dest', s.target ? UI.importInto(s.target) : '');
-    q<HTMLButtonElement>('[data-clear=overlay]').disabled = !s.overlay;
-    start.disabled = !s.game;
+    if (s.games.length) note('game', UI.importFound(s.games.map((g) => title(g.id))), 'ok');
+    const fresh = s.games.filter((g) => !g.exists).map((g) => g.target), skipped = s.games.filter((g) => g.exists).map((g) => g.target);
+    note('dest', [fresh.length ? UI.importInto(fresh) : '', skipped.length ? UI.importSkipped(skipped) : ''].filter(Boolean).join('. '));
+    start.disabled = !s.games.length;
   };
   for (const b of scrim.querySelectorAll<HTMLButtonElement>('[data-pick]')) {
     b.onclick = async () => {
@@ -152,7 +152,6 @@ function openImport(reload: () => void) {
       await refresh();
     };
   }
-  q<HTMLButtonElement>('[data-clear=overlay]').onclick = async () => { await platform.importClear('overlay'); await refresh(); };
 
   const setRunning = (on: boolean) => {
     running = on;
@@ -164,7 +163,7 @@ function openImport(reload: () => void) {
     q('.progress').hidden = !on;
   };
   platform.onImportProgress((p) => {
-    q('.progress .label').textContent = UI.importStage[p.stage];
+    q('.progress .label').textContent = UI.importStep(title(p.game), UI.importStage[p.stage]);
     q('.progress .count').textContent = p.total > 1 ? `${p.done} / ${p.total}` : '';
     q('.progress .bar > div').style.width = (p.total ? (100 * p.done) / p.total : 0) + '%';
   });
@@ -173,10 +172,9 @@ function openImport(reload: () => void) {
     setRunning(true);
     const r = await platform.importStart();
     setRunning(false);
-    if (r.ok) {
-      msg.textContent = UI.importDone(GAMES.find((g) => g.id === r.game)!.title);
-      imported = true;
-    } else msg.textContent = r.cancelled ? UI.importCancelled : UI.importFailed(r.error ?? '');
+    if (r.games?.length) imported = true;
+    if (r.ok) msg.textContent = UI.importDone(r.games!.map(title));
+    else msg.textContent = r.cancelled ? UI.importCancelled : UI.importFailed(r.error ?? '');
     await refresh();
   };
   stop.onclick = () => { stop.disabled = true; platform.importCancel(); };

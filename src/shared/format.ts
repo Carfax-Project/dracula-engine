@@ -38,7 +38,7 @@ export interface Cmd { op: string; [k: string]: any }
 export interface SaveFile { script: string; label: string; info: string[]; thumb: string; state: any }
 
 export type ImportStage = 'files' | 'scenes' | 'movies';
-export interface ImportProgress { stage: ImportStage; done: number; total: number }
+export interface ImportProgress { game: GameId; stage: ImportStage; done: number; total: number }
 
 export type GameStatus = 'ok' | 'unset' | 'missing' | 'invalid' | 'outdated';
 
@@ -48,9 +48,12 @@ export interface GameEntry { id: GameId; path: string | null; status: GameStatus
 /** The folder the user picked, and what was detected inside it. */
 export interface Library { root: string | null; games: GameEntry[] }
 
-export type ImportPick = 'game' | 'overlay' | 'dest';
-export interface ImportState { game: { path: string; id: GameId } | null; overlay: string | null; dest: string; target: string | null }
-export interface ImportResult { ok?: true; game?: GameId; cancelled?: true; error?: string }
+export type ImportPick = 'game' | 'dest';
+/** `exists`: <dest>/<id> is already there, so that game is skipped (never overwritten). */
+export interface ImportGame { id: GameId; path: string; target: string; exists: boolean }
+export interface ImportState { source: string | null; games: ImportGame[]; dest: string }
+/** `games`: the ones imported, also when a later one failed or was stopped. */
+export interface ImportResult { ok?: true; games?: GameId[]; cancelled?: true; error?: string }
 
 /** API exposed by the Electron preload as window.dracula */
 export interface NativeApi {
@@ -68,7 +71,6 @@ export interface NativeApi {
   version(): Promise<string>;
   importState(): Promise<ImportState>;
   importPick(kind: ImportPick): Promise<{ ok?: true; cancelled?: true; error?: string }>;
-  importClear(kind: 'overlay'): Promise<void>;
   importStart(): Promise<ImportResult>;
   importCancel(): void;
   onImportProgress(cb: (p: ImportProgress) => void): void;

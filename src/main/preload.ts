@@ -15,7 +15,6 @@ const api: NativeApi = {
   version: () => ipcRenderer.invoke('version'),
   importState: () => ipcRenderer.invoke('importState'),
   importPick: (kind) => ipcRenderer.invoke('importPick', kind),
-  importClear: (kind) => ipcRenderer.invoke('importClear', kind),
   importStart: () => ipcRenderer.invoke('importStart'),
   importCancel: () => ipcRenderer.send('importCancel'),
   onImportProgress: (cb) => {

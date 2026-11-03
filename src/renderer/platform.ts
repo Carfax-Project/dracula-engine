@@ -30,7 +30,6 @@ class Platform {
   version() { return this.api.version(); }
   importState() { return this.api.importState(); }
   importPick(kind: ImportPick) { return this.api.importPick(kind); }
-  importClear(kind: 'overlay') { return this.api.importClear(kind); }
   importStart() { return this.api.importStart(); }
   importCancel() { this.api.importCancel(); }
   onImportProgress(cb: (p: ImportProgress) => void) { this.api.onImportProgress(cb); }

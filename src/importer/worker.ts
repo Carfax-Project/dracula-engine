@@ -9,7 +9,7 @@ port.on('message', ({ data }) => {
   if (data.type === 'cancel') { controller.abort(); stopAll(); return; }
   if (data.type !== 'start') return;
   importGame({
-    game: data.game, out: data.out, overlays: data.overlays, signal: controller.signal,
+    game: data.game, out: data.out, signal: controller.signal,
     log: (message) => port.postMessage({ type: 'log', message }),
     progress: (stage, done, total) => port.postMessage({ type: 'progress', stage, done, total }),
   }).then(

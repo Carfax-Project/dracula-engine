@@ -78,7 +78,7 @@ npm run typecheck         # tsc --noEmit, strict mode (must pass)
 npm test                  # unit tests (node:test), no game data needed
 npm run test:e2e          # Playwright drives the real app (see below)
 npm run dist              # release build (DEV off) for this OS: AppImage + .deb on Linux, NSIS installer on Windows
-npm run import -- --game <GOG folder> --out <new data folder> [--overlay <translation>]
+npm run import -- --game <installed game, CD images, or a folder holding both> --out <new data folder>
 ```
 
 E2E test: `DRACULA_TEST_D1=<data> DRACULA_TEST_D2=<data2> npm run test:e2e`
@@ -120,9 +120,10 @@ src/shared/format.ts      Types: data folder format, GameEntry, Library, NativeA
 src/shared/strings.ts     UI object: every player-visible string, main + renderer
 src/importer/             Original game files -> data format 3 (Node; ffmpeg for encoding):
                           vr.ts (.vr decoder), lst.ts (scripts), formats.ts (.pak, .tst,
-                          .pcx, .arn), fourxm.ts (Dracula 1's raw 4XM movies), files.ts
-                          (file lookup, overlays, per-folder variants), ffmpeg.ts (WebP,
-                          Opus, VP9), import.ts, cli.ts (npm run import [-- --no-videos]),
+                          .pcx, .arn), fourxm.ts (Dracula 1's raw 4XM movies), disc.ts
+                          (CD images), files.ts (game detection, file lookup, per-folder
+                          variants), ffmpeg.ts (WebP, Opus, VP9), import.ts, cli.ts
+                          (npm run import [-- --no-videos]),
                           worker.ts (the utility process the import screen runs)
 src/renderer/app.ts       Start screen: the two covers, the gear sheet, the import
                           screen, start a game
@@ -244,13 +245,14 @@ sound/<stem>.opus    (lowercase stem of the name scripts use)
 movie/<name>.webm    (VP9 + Opus, lowercase stem)
 ```
 
-`variants`: Dracula 2 keeps 21 files with the same name but different content in
-`DataM1` and `DataM2`, and the original engine looks in the running script's folder
-first. The importer writes those copies as `<name>~<folder>` and maps them per
+`variants`: Dracula 2 keeps files with the same name but different content in
+`DataM1` and `DataM2` (21 in the GOG version, one on the CDs), and the original engine
+looks in the running script's folder first. On the CDs each disc is such a folder
+(Dracula 1: `Credit.vr` differs between them, and `Data/` has its own cursors). The importer writes those copies as `<name>~<folder>` and maps them per
 script; the engine resolves every file name through `Engine.file()` (scenes, click
 regions, sounds, cursors, movies). Without it, one mission gets the other's files
 (e.g. the notebook has 4 click regions in mission 1, where the 4th turns the page,
-and 3 in mission 2). Folders converted by `dracula-port` have no variants.
+and 3 in mission 2 of the GOG version). Folders converted by `dracula-port` have no variants.
 
 Only the importer writes format 3. A change to the data format bumps `DATA_FORMAT`;
 folders in the old format are then reported as outdated and converted again, not
@@ -322,16 +324,28 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   areas (F4) go behind it and never reach a release; keep their code reachable only
   from such a branch (e.g. a module-level function) so the bundle drops it.
 - **Importer** (`src/importer/`). The user points at an installed game (the GOG
-  version) plus, optionally, a translation folder whose files override the game's
-  (like `--overlay` in `dracula-port`; copies with 32 KB+ zero runs are skipped as
-  damaged CD reads), and it writes format 3. The engine never reads the original
-  files; only the importer does. Port from `dracula-port` only what the importer
-  needs; the engine already has the rest.
+  version), at a folder with CD images, or at a folder holding both games, and it
+  writes format 3. `findGames` looks in the folder itself and its direct subfolders
+  (symlinks included, like `locate()`), first match per game; one folder of images can
+  hold both games' discs. With two games found they are imported one after the other
+  (the CLI writes each to `<out>/<game>`). The engine never reads the original files;
+  only the importer does. Port from
+  `dracula-port` only what the importer needs; the engine already has the rest.
+  - CD images (`disc.ts`): `.iso` or raw `.img`/`.bin` (2352-byte sectors, Mode 1 or
+    Mode 2 Form 1), names from Joliet when present. Files are read straight from the
+    image, never extracted. The game is told by content (`DataM1/` means Dracula 2,
+    `0M1Script.pak` Dracula 1), so any edition with the same layout works; the PT-BR
+    CDs of both games are the ones tested. `Install/` (what the installer copied to
+    the disk) is the game folder; the rest of each disc is its script's folder, named
+    after its path or `cdN` for the disc root (numbered per game).
+  - Multi-CD scripts write the next script as `"2:0M2Script.lst"`; `lst.ts` drops the
+    disc number, which `stemOf` would otherwise keep.
   - Scripts (`.lst`, `.pak`), click regions, scenes, cursors (only `.pcx`: scripts
     never name the `.gif`/`.bmp` copies), `.arn` (root copy), sounds and movies.
   - Movies: Dracula 2's 4XM is standard and ffmpeg reads it. Dracula 1's raw 4XM is
     decoded by `fourxm.ts` and piped to ffmpeg; its audio is cut or padded to the
-    video's length first, because `-shortest` overshoots. VP9 CRF 30 + Opus.
+    video's length first, because `-shortest` overshoots. VP9 CRF 30 (realtime,
+    `-cpu-used 8`: about 8x faster than `good` at the same quality) + Opus.
   - Encoding goes through `ffmpeg-static` (an npm dependency that downloads the
     binary for the OS it is installed on; nothing OS-specific lives in the repo).
     `asarUnpack` keeps it runnable in a packaged app; `ffmpeg.ts` runs up to one
@@ -339,11 +353,12 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
     `npm run dist` builds only the current OS's package.
   - Import screen (`tpl-import`, `openImport` in `app.ts`): the renderer never sends
     paths; `importPick` opens a dialog and main keeps the choice. `importStart` forks
-    `import-worker.js` as an Electron utility process (decoding would otherwise block
-    the main process), relays its progress as `importProgress` events, and writes to
-    `<dest>/<game>.partial`, renamed to `<dest>/<game>` when done; then
-    `config.json` points that game at it. An existing `<dest>/<game>` is never
-    overwritten. `<dest>` defaults to the library root, else `defaultGamesDir()`:
+    `import-worker.js` as an Electron utility process per game, in turn (decoding would
+    otherwise block the main process), relays its progress as `importProgress` events
+    tagged with the game, and writes to `<dest>/<game>.partial`, renamed to
+    `<dest>/<game>` when done; then `config.json` points that game at it. An existing
+    `<dest>/<game>` is never overwritten: that game is skipped (the screen says so),
+    and only when every found game is already there does starting fail. `<dest>` defaults to the library root, else `defaultGamesDir()`:
     `%LOCALAPPDATA%\Dracula\Games` on Windows, `$XDG_DATA_HOME` (or
     `~/.local/share`)`/Dracula/games` on Linux; local data, never synced. Stop
     aborts the import and kills ffmpeg; starting again resumes (scenes with a

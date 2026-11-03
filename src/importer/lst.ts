@@ -248,7 +248,8 @@ function pluginCommand(name: string, args: string[], lineno: number): Cmd {
     case 'while': return { op: 'wait', seconds: float(args[0]) };
     case 'until': return { op: 'until', var: args[0], value: int(args[1]) };
     case 'end': return { op: 'quit' };
-    case 'multicd_set_next_script': return { op: 'nextscript', file: args[0] };
+    // The disc number in front ("2:0M2Script.lst") is not a drive letter.
+    case 'multicd_set_next_script': return { op: 'nextscript', file: args[0]?.replace(/^\d+:/, '') };
     case 'multicd_set_transition_script': case 'multicd_use_install_path': case 'multicd_if_next_script':
     case 'loadsave_init_slots': case 'memoryrelease': case 'preload': case 'updatestage':
       return { op: 'nop', plugin: n, args };

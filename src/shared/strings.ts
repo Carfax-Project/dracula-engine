@@ -21,17 +21,18 @@ export const UI = {
 
   // ---------------------------------------------------------------- importer
   importNoGame: "No game folder chosen yet.",
-  importNoOverlay: "None",
-  importFound: (title: string) => "Found " + title,
-  importInto: (folder: string) => "Will be created as " + folder,
+  importFound: (titles: string[]) => "Found " + titles.join(" and "),
+  importInto: (folders: string[]) => "Will be created as " + folders.join(" and "),
+  importSkipped: (folders: string[]) => "Already there, skipped: " + folders.join(" and "),
   importStage: { files: "Scripts, cursors and sounds", scenes: "Scenes", movies: "Movies" } as Record<string, string>,
-  importDone: (title: string) => title + " is ready to play.",
+  importStep: (title: string, stage: string) => title + ": " + stage,
+  importDone: (titles: string[]) => titles.join(" and ") + (titles.length > 1 ? " are" : " is") + " ready to play.",
   importCancelled: "Import stopped. Starting it again picks up where it left off.",
   importFailed: (reason: string) => "Import failed: " + reason,
-  importNotAGame: "That folder doesn't hold Dracula: The Resurrection or Dracula 2.",
+  importNotAGame: "No Dracula: The Resurrection or Dracula 2 in that folder or the ones right inside it, installed or as CD images.",
   importBusy: "An import is already running.",
   importIncomplete: "Choose the game folder and where to save it first.",
-  importExists: (folder: string) => folder + " already exists. Move it away or choose another destination.",
+  importExists: (folders: string[]) => folders.join(" and ") + (folders.length > 1 ? " already exist" : " already exists") + ". Move it away or choose another destination.",
   importCrashed: (code: number) => "the importer stopped unexpectedly (" + code + ")",
 
   // -------------------------------------------------------- in-game messages
@@ -48,7 +49,6 @@ export const UI = {
   // ---------------------------------------------- main process folder dialogs
   folderDialogTitle: "Folder holding the converted Dracula game data",
   folderHasNoData: "Neither game was found in that folder.",
-  importGameDialog: "Installed game folder (Dracula: The Resurrection or Dracula 2)",
-  importOverlayDialog: "Translation folder (its files replace the game's)",
+  importGameDialog: "Installed game, a folder with its CD images, or a folder holding both games",
   importDestDialog: "Folder to save the converted game in",
 } as const;

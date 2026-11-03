@@ -28,6 +28,8 @@ support, by decision; don't add a `mac` build target.
    or re-encoding data is a separate step, done only when the user asks, and it either
    writes new output or keeps a backup of what it replaces. The engine reads only the
    current data format (`DATA_FORMAT`); there is no compatibility layer for older ones.
+   The one deletion is the gear sheet's Remove, after the player confirms it: see
+   **Removing a game**.
 2. **No game assets in this repository** (scripts, images, sounds, videos, extracted
    text). The engine must stay distributable on its own. One deliberate exception:
    the two box-art covers in `src/renderer/assets/`, the app
@@ -115,6 +117,7 @@ files (hard rule 2).
 ```
 src/main/main.ts          Electron main: window, game:// protocol (Range support), IPC,
                           library folder config + per-game detection, saves/prefs as JSON
+src/main/update.ts        Looks for a newer GitHub release (no Electron, unit-tested)
 src/main/preload.ts       contextBridge -> window.dracula (NativeApi)
 src/shared/format.ts      Types: data folder format, GameEntry, Library, NativeApi
 src/shared/strings.ts     UI object: every player-visible string, main + renderer
@@ -144,7 +147,7 @@ scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
                           renderer as IIFE; --release turns DEV off)
 scripts/e2e.mjs           End-to-end smoke test
 scripts/test.mjs          Unit test runner
-test/                     Unit tests (importer decoders, file lookup, util)
+test/                     Unit tests (importer decoders, file lookup, util, update check)
 docs/images/              README animations (start screen, three scenes, options menu)
 ```
 
@@ -169,15 +172,38 @@ docs/images/              README animations (start screen, three scenes, options
     are ignored while the gear sheet is open or a corner button has the focus.
   - **Corner.** The halves carry no controls; the `.corner` pair at the top right
     holds the gear and quit (`platform.quit()`), each a glyph in a pill whose label
-    slides out on hover. The gear opens the `tpl-settings` sheet: chosen folder, what
-    was detected per game, the "Choose folder…" button (`data-choose`, which the
-    e2e test clicks), "Import from game files…" (`data-import`, opens `tpl-import`),
+    slides out on hover. The gear reads the library again (so games copied in or
+    deleted since show up, and the covers are redrawn if anything changed) and opens
+    the `tpl-settings` sheet: chosen folder, what
+    was detected per game (with a Remove button for a found or outdated one), the
+    "Choose folder…" button (`data-choose`, which the e2e test clicks), "Import from
+    game files…" (`data-import`, opens `tpl-import`),
     the player settings from `tpl-prefs`, stored for the next game, and the version
     in the footer. While nothing is playable (`#ui.nothing`) the gear shows its label and
     stands out, since it is then the only thing worth clicking.
+- **Removing a game.** Remove in the gear sheet asks main (`removeGame`) to delete
+  the folder `config.json` names for that game (e.g. `<library>/dracula1`), never the
+  library folder around it, after a confirmation that shows the path (`tpl-remove`;
+  not a native message box, which crashes Electron 44 under KDE on Wayland). Main
+  deletes it only while it still validates as that game (`ok` or `outdated`), plus
+  `<folder>.partial` when the folder is named after the game (an interrupted import),
+  then drops the game from `config.json`. Saves live in `<userData>` and stay. It is
+  how a player frees the space after a data format change, before importing again.
 - **Version.** `version` in `package.json` is the only source: electron-builder names
   the packages after it, and the settings sheet footer shows it (`app.getVersion()`
   through the `version` IPC). Bump it there before a release.
+- **Update check.** The only time the app goes online. Once per run (main keeps the
+  promise, so page reloads don't ask again), `findUpdate` (`update.ts`) reads
+  `releases/latest` from the GitHub API, which skips drafts and pre-releases, and
+  compares its tag with `app.getVersion()`. It then reads `DATA_FORMAT` from that tag's
+  `src/shared/format.ts` on raw.githubusercontent.com, so the notice can say the games
+  must be imported again; keep that constant's line in that form. Offline, rate-limited
+  or up to date gives nothing, silently. A newer release shows `.update` at the top
+  left of the start screen; its button asks main (`openUpdate`, no URL from the
+  renderer) to open the release page with `shell.openExternal`. Nothing is downloaded;
+  `electron-updater` was ruled out (extra release metadata, poor `.deb` support, and a
+  data format change must not land unnoticed). The `updateCheck` pref turns it off; the
+  e2e test seeds it off so it never goes online.
 - **Releases.** `.github/workflows/release.yml` runs on a pushed `v*` tag: it checks
   that the tag is on `main` and equals `v` + `version`, runs `typecheck`, `npm test`
   and `npm run dist` on a Linux and a Windows runner, and creates a draft GitHub
@@ -201,12 +227,15 @@ docs/images/              README animations (start screen, three scenes, options
   `__dracula.put(`, and `manifest.game` must match the id; a missing `game` field
   means `dracula1`, since early conversions lack it. A `manifest.format` other than
   `DATA_FORMAT` (missing means 1) gives the status `outdated`: the game is found but
-  not playable, and the gear sheet says to convert it again. `chooseLibrary` runs `locate()`
+  not playable, and the gear sheet says to remove it and import it again.
+  `chooseLibrary` runs `locate()`
   once per game over the picked folder: it matches the folder itself or any direct
   subfolder (symlinks included), so picking the parent finds both games, and picking a
   single game's folder finds just that one. `config.json` keeps `root` (what the user
   picked, for display and as the dialog's starting point) and `games` (the folder
-  resolved per game, which is what the protocol serves).
+  resolved per game, which is what the protocol serves). `getLibrary` runs `locate()`
+  over `root` again for each game missing from `games` and stores what it finds, so a
+  game copied there later (a restored backup) shows up without picking the folder.
 - **Saves.**
   - One file per slot at `<userData>/saves/<gameId>/slotN.json`, always. Never write
     saves next to the game data: that folder is read-only input and may live in a
@@ -217,7 +246,8 @@ docs/images/              README animations (start screen, three scenes, options
 - **Preferences.** `classic` (pointer-lock mouse, shown as Mouse: Original / Free
   cursor, default on), `stretch` (shown as Aspect ratio: Fill screen / Original 4:3,
   default on), `volume` (0–1, default 1), `sensitivity` (shown as Look speed, for the
-  pointer-lock mouse, 0.25–3, default 1) and `skipIntro` (default off), stored in
+  pointer-lock mouse, 0.25–3, default 1), `skipIntro` (default off) and
+  `updateCheck` (default on; only in the gear sheet, under Updates), stored in
   `<userData>/prefs.json`. `skipIntro` makes `enterWarp` send `Debut.vr` (both games'
   logos and opening movies, which end at `Interface.vr`, the menu) straight to the
   menu; Dracula 1's "new game" also passes through `Debut.vr`. `platform.pref` takes

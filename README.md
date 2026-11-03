@@ -51,6 +51,8 @@ Dracula Engine requires game data files from your own copies of Dracula: The Res
 
 Install the game (the GOG version works), or put the images of its CDs (`.iso`, `.img` or `.bin`) in a folder. Then open **Settings → Import from game files…**, choose the game's folder (or one holding both games, which are then imported one after the other) and, if you like, where to save the converted copy (by default `%LOCALAPPDATA%\Dracula\Games` on Windows and `~/.local/share/Dracula/games` on Linux). The import converts everything once, which takes about a quarter of an hour, mostly for the movies; the original files are never changed.
 
+At launch the app asks GitHub whether a newer version exists and, if so, links to it from the start screen; nothing is downloaded or installed. **Settings → Updates** turns that off. When a new version changes how the games are converted, remove each game in **Settings** (your saves are kept) and import it again.
+
 To run the engine in development mode:
 
 ```bash

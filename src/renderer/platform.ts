@@ -11,6 +11,7 @@ class Platform {
   constructor(private api: NativeApi) {}
   getLibrary() { return this.api.getLibrary(); }
   chooseLibrary() { return this.api.chooseLibrary(); }
+  removeGame(game: GameId) { return this.api.removeGame(game); }
   async loadSaves(game: GameId) { this.game = game; this.saves = await this.api.readSaves(game); }
   hasSave(slot: number) { return !!this.saves[slot]; }
   readSave(slot: number) { return this.saves[slot] || null; }
@@ -28,6 +29,8 @@ class Platform {
   toggleFullscreen() { void this.api.isFullscreen().then((on) => this.api.setFullscreen(!on)); }
   quit() { this.api.quit(); }
   version() { return this.api.version(); }
+  checkUpdate() { return this.api.checkUpdate(); }
+  openUpdate() { this.api.openUpdate(); }
   importState() { return this.api.importState(); }
   importPick(kind: ImportPick) { return this.api.importPick(kind); }
   importStart() { return this.api.importStart(); }

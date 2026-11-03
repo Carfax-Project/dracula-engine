@@ -100,11 +100,25 @@ function openSettings(lib: Library, reload: () => void) {
     where.className = 'gwhere';
     where.textContent = foundText(e ?? { id: g.id, path: null, status: 'unset', base: null }, lib.root);
     li.append(mark, name, where);
+    if (e?.status === 'ok' || e?.status === 'outdated') {
+      const remove = document.createElement('button');
+      remove.className = 'sec remove';
+      remove.textContent = UI.remove;
+      remove.onclick = async () => {
+        const r = await platform.removeGame(g.id);
+        if (r.error) where.textContent = r.error;
+        else if (r.ok) { close(); reload(); }
+      };
+      li.append(remove);
+    }
     list.append(li);
   }
 
   scrim.querySelector('.opts')!.append(clone('tpl-prefs'));
   bindSettings(scrim);
+  const check = scrim.querySelector<HTMLInputElement>('input[name=updateCheck]')!;
+  check.checked = platform.pref('updateCheck', true);
+  check.onchange = () => platform.setPref('updateCheck', check.checked);
   void platform.version().then((v) => { scrim.querySelector('[data-version]')!.textContent = v; });
 
   const close = () => { scrim.remove(); document.onkeydown = null; };
@@ -209,7 +223,19 @@ async function render() {
   games.onmouseleave = () => select(-1);
   ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = () => openSettings(lib, () => void render());
   ui.querySelector<HTMLButtonElement>('button.quit')!.onclick = () => platform.quit();
+  void showUpdate();
   return ready;
+}
+
+async function showUpdate() {
+  if (!platform.pref('updateCheck', true)) return;
+  const u = await platform.checkUpdate();
+  const el = $('ui').querySelector<HTMLElement>('.update');   // gone if a game started meanwhile
+  if (!u || !el) return;
+  el.querySelector('.version')!.textContent = UI.updateAvailable(u.version);
+  el.querySelector('.why')!.textContent = u.reimport ? UI.updateReimport : '';
+  el.querySelector<HTMLButtonElement>('button.get')!.onclick = () => platform.openUpdate();
+  el.hidden = false;
 }
 
 async function start(e: GameEntry) {

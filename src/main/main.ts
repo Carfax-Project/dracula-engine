@@ -6,13 +6,14 @@
  *    every launch.
  *  - Saves and preferences are plain JSON files (see savesDir()).
  */
-import { app, BrowserWindow, dialog, ipcMain, protocol, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, shell, utilityProcess, type UtilityProcess } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Readable } from 'node:stream';
 import { findGames, type GameSource } from '../importer/files';
-import { DATA_FORMAT, type GameEntry, type GameId, type ImportGame, type ImportResult, type ImportState } from '../shared/format';
+import { DATA_FORMAT, type GameEntry, type GameId, type ImportGame, type ImportResult, type ImportState, type UpdateInfo } from '../shared/format';
 import { UI } from '../shared/strings';
+import { findUpdate } from './update';
 
 const GAME_IDS: readonly GameId[] = ['dracula1', 'dracula2'];
 const isGameId = (v: unknown): v is GameId => typeof v === 'string' && (GAME_IDS as readonly string[]).includes(v);
@@ -192,6 +193,31 @@ function setupIpc(win: () => BrowserWindow | null) {
     return { ok: true };
   });
 
+  // Deletes the game's own folder, never the library around it, and only while it still
+  // holds that game: a hand-edited config.json can't point this at anything else.
+  ipcMain.handle('removeGame', async (_e, id: unknown) => {
+    if (!isGameId(id)) return { cancelled: true };
+    const e = entry(id);
+    if (!e.path || (e.status !== 'ok' && e.status !== 'outdated')) return { error: e.status === 'missing' ? UI.folderGone : UI.folderInvalid };
+    const w = win();
+    const opts: Electron.MessageBoxOptions = {
+      type: 'warning', buttons: [UI.removeButton, UI.cancel], defaultId: 1, cancelId: 1,
+      message: UI.removeQuestion, detail: UI.removeDetail(e.path),
+    };
+    const r = w ? await dialog.showMessageBox(w, opts) : await dialog.showMessageBox(opts);
+    if (r.response !== 0) return { cancelled: true };
+    if (gameOf(e.path)?.id !== id) return { error: UI.folderInvalid };
+    try {
+      await fs.promises.rm(e.path, { recursive: true, force: true });
+      // what an interrupted import into the same place left behind
+      if (path.basename(e.path) === id) await fs.promises.rm(e.path + '.partial', { recursive: true, force: true });
+    } catch (err) { return { error: UI.removeFailed((err as Error).message) }; }
+    const cfg = readConfig();
+    const { [id]: _gone, ...games } = cfg.games ?? {};
+    writeConfig({ ...cfg, games });
+    return { ok: true };
+  });
+
   ipcMain.handle('readSaves', (_e, id: unknown) => {
     const out: Record<string, string> = {};
     if (!isGameId(id)) return out;
@@ -294,6 +320,10 @@ function setupIpc(win: () => BrowserWindow | null) {
   ipcMain.handle('isFullscreen', () => !!win()?.isFullScreen());
   ipcMain.on('quit', () => app.quit());
   ipcMain.handle('version', () => app.getVersion());
+
+  let update: Promise<UpdateInfo | null> | null = null;
+  ipcMain.handle('checkUpdate', () => update ??= findUpdate((u, i) => net.fetch(u, i), app.getVersion(), DATA_FORMAT).catch(() => null));
+  ipcMain.on('openUpdate', () => { void update?.then((u) => u && shell.openExternal(u.url)); });
 }
 
 // ----------------------------------------------------------------- window

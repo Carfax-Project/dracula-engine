@@ -55,12 +55,15 @@ export interface ImportState { source: string | null; games: ImportGame[]; dest:
 /** `games`: the ones imported, also when a later one failed or was stopped. */
 export interface ImportResult { ok?: true; games?: GameId[]; cancelled?: true; error?: string }
 
+export interface UpdateInfo { version: string; url: string; reimport: boolean }
+
 /** API exposed by the Electron preload as window.dracula */
 export interface NativeApi {
   platform: string;
   getLibrary(): Promise<Library>;
   /** Picks one folder holding both games; each game is still detected on its own. */
   chooseLibrary(): Promise<{ ok?: true; cancelled?: true; error?: string }>;
+  removeGame(game: GameId): Promise<{ ok?: true; cancelled?: true; error?: string }>;
   readSaves(game: GameId): Promise<Record<string, string>>;
   writeSave(game: GameId, slot: number, json: string): Promise<boolean>;
   readPrefs(): Promise<Record<string, unknown>>;
@@ -69,6 +72,8 @@ export interface NativeApi {
   isFullscreen(): Promise<boolean>;
   quit(): void;
   version(): Promise<string>;
+  checkUpdate(): Promise<UpdateInfo | null>;
+  openUpdate(): void;
   importState(): Promise<ImportState>;
   importPick(kind: ImportPick): Promise<{ ok?: true; cancelled?: true; error?: string }>;
   importStart(): Promise<ImportResult>;

@@ -148,7 +148,7 @@ scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
 scripts/e2e.mjs           End-to-end smoke test
 scripts/test.mjs          Unit test runner
 test/                     Unit tests (importer decoders, file lookup, util, update check)
-docs/images/              README animations (start screen, three scenes, options menu)
+docs/images/              README animations (three scenes, options menu)
 ```
 
 ## Architecture notes
@@ -244,9 +244,10 @@ docs/images/              README animations (start screen, three scenes, options
     them synchronously; writes go through IPC.
   - Slot 9 is used internally by the game scripts; saving to it shows no "Game saved" message.
 - **Preferences.** `classic` (pointer-lock mouse, shown as Mouse: Original / Free
-  cursor, default on), `stretch` (shown as Aspect ratio: Fill screen / Original 4:3,
-  default on), `volume` (0–1, default 1), `sensitivity` (shown as Look speed, for the
-  pointer-lock mouse, 0.25–3, default 1), `skipIntro` (default off) and
+  cursor, default on), `widescreen` (shown as Aspect ratio: Widescreen / Original
+  4:3, default on; `loadPrefs` turns the old `stretch` into it), `volume` (0–1,
+  default 1), `sensitivity` (shown as Look speed, for the pointer-lock mouse,
+  0.25–3, default 1), `skipIntro` (default off) and
   `updateCheck` (default on; only in the gear sheet, under Updates), stored in
   `<userData>/prefs.json`. `skipIntro` makes `enterWarp` send `Debut.vr` (both games'
   logos and opening movies, which end at `Interface.vr`, the menu) straight to the
@@ -300,6 +301,20 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
 - **Shader precision.** The view ray is computed in the **vertex** shader and passed
   as a varying. Computing it from `gl_FragCoord` in the fragment shader broke on GPUs
   that use fp16 for fragment math (a black area right of x≈102). Don't move it back.
+- **Widescreen (Hor+).** With `widescreen` on and a window wider than 4:3, a panorama
+  fills the window: the box takes the whole window and the logical view becomes
+  `lw` = 480 × the window's aspect wide (853 at 16:9) instead of `W` = 640. `camera()`
+  keeps the original vertical field of view and widens the horizontal one, so the
+  middle 640 columns see exactly what the original did (`test/panorama.test.ts`).
+  Everything in view coordinates uses `lw`: the overlay canvas width, `uRes`, mouse
+  mapping, the virtual cursor, edge panning, drag-to-look, the centred crosshair.
+  Click regions are angles, so they need nothing. 2D screens and movies stay 4:3
+  (`wantFill()`); `relayout()`, called by `renderScene` and when a movie starts, eases
+  the box when that changes. Dracula 2's HUD (timer bar, `AfficheImage`) is laid out
+  for 640×480 and is drawn offset into the middle; the `AfficheImage` pictures are
+  full-screen, so their edge columns are stretched over the sides (black beside the
+  magnifier's mask, nothing beside a weapon). Keep that offset whole: a half pixel
+  leaves a see-through seam. Thumbnails take the middle 4:3.
 - **Dracula 2 face width.** Faces are sampled with `uXScale = 511/512`, because the
   original renderer skips the last pixel of each tile.
 - **Dracula 2 plugins.**
@@ -316,19 +331,26 @@ and interpreted in `Engine.exec`. Unknown ops log a warning; don't throw.
   - On 2D screens the locked mouse moves a virtual cursor.
   - Losing the lock without a recent Esc keydown is treated as Esc (key code 0),
     because Chromium often eats the key.
-- **4:3 <-> stretched easing.** `layout(true)`, called only by the `F3` toggle, adds
-  `#box.easing` so the box width/height transition over `LAYOUT_EASE_MS` (450 ms) and
-  the frame visibly stretches or pulls back in. Window resizes call `layout()` without
-  it, so dragging a window edge never lags. While easing, the WebGL canvas keeps the
-  larger of the old and new sizes (no blurry frame mid-way); the exact size is set on
-  `transitionend`, with a timer as fallback. The backdrop fades with it (`.off`).
-- **4:3 backdrop.** With `stretch` off, `#backdrop` (behind `#box`) shows the current
-  frame (video, panorama or 2D screen) cropped to the window's aspect, refreshed at
+- **4:3 <-> widescreen easing.** `layout(true)`, called by the `F3` toggle and by
+  `relayout()`, eases the box over `LAYOUT_EASE_MS` (450 ms, ease-out cubic). It is
+  timed in JS from `performance.now()` (`stepLayout`, on its own `requestAnimationFrame`
+  and at the start of `renderScene`), not by a CSS transition: both directions then
+  take exactly as long even when the first frames stutter, and every frame sets `lw`
+  from the box's current shape (`setBox`), so a panorama gains or loses its sides
+  instead of stretching. 2D screens stay 4:3 in the middle (`object-fit: contain` on
+  `#screen2d`, hit tests shifted by `ox()`); movies already are (`#movie`). Window
+  resizes call `layout()` without it, so dragging a window edge never lags. While
+  easing, the WebGL canvas keeps the larger of the old and new sizes (no blurry frame
+  mid-way); `renderScene` applies `glSize` right before drawing, since resizing clears
+  the canvas. The backdrop fades with it (`.off`).
+- **4:3 backdrop.** Whenever the box is 4:3 (`fill` off), `#backdrop` (behind `#box`)
+  shows the current frame (video, panorama or 2D screen) cropped to the window's
+  aspect, refreshed at
   15 fps into a 320 px canvas; CSS scales, blurs and darkens it. It runs on its own
   `requestAnimationFrame`, so movies and blocking commands need no hook. Keep the
   canvas at least that big: smaller canvases are CPU-backed in Chromium, and copying
-  the WebGL canvas into one would read the whole frame back every refresh. Hidden in
-  stretch mode, where there are no bars.
+  the WebGL canvas into one would read the whole frame back every refresh. Hidden
+  while a panorama fills the window, where there are no bars.
 - **Options menu (`F10`).** `tpl-options`, shown on the `#ui` layer as `#ui.menu`:
   the `tpl-prefs` rows (volume, mouse mode, look speed, aspect ratio, skip intro;
   the two modes are radio pairs styled as one segmented control, `.seg`; wired by

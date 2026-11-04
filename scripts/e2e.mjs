@@ -85,7 +85,7 @@ try {
     check(prefs.volume === 0.4, `${id}: volume stored in prefs.json`);
     await win.keyboard.press('F3');
     await win.waitForTimeout(300);
-    check(!(await win.evaluate(() => window.engine.stretch)), `${id}: F3 toggles stretch`);
+    check(!(await win.evaluate(() => window.engine.widescreen)), `${id}: F3 toggles widescreen`);
     await win.keyboard.press('F3');
     await win.evaluate(async () => { const e = window.engine; e.captureContext(); e.saveThumbnail(); await e.saveGame(7); });
     await win.screenshot({ path: join(shots, `${id}.png`) });

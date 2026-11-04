@@ -7,7 +7,7 @@
 
 attribute vec2 p;
 uniform vec3 uStart, uIncX, uIncY;
-uniform vec2 uRes;      // renderer resolution in pixels, set once from W/H
+uniform vec2 uRes;      // logical view size: 480 high, as wide as the camera
 varying vec3 vDir;
 varying float vLy;
 

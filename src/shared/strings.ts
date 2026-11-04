@@ -42,7 +42,7 @@ export const UI = {
   // -------------------------------------------------------- in-game messages
   classicMouse: "Mouse: Original, the mouse turns the view (F2 to switch)",
   freeMouse: "Mouse: Free cursor, drag to look around (F2 to switch)",
-  stretched: "Aspect ratio: Fill screen (F3 to switch)",
+  widescreen: "Aspect ratio: Widescreen (F3 to switch)",
   original43: "Aspect ratio: Original 4:3 (F3 to switch)",
   volumeValue: (v: number) => Math.round(v * 100) + "%",
   sensitivityValue: (v: number) => v.toFixed(2) + "×",

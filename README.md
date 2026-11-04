@@ -9,10 +9,6 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/main-menu.webp" width="760" alt="Start screen">
-</p>
-
-<p align="center">
   <img src="docs/images/scenes.webp" width="760" alt="Looking around a graveyard and a mine in Dracula: The Resurrection and a hall in Dracula 2: The Last Sanctuary">
 </p>
 
@@ -23,13 +19,13 @@
 - **Smooth 360° panoramas** rendered with WebGL, at any window size
 - **Original or free-cursor mouse** — the mouse turns the view as in the original, or drag to look around
 - **Skip the intro** if you like, and go straight to the menu
-- **Fullscreen in one click**, filling the screen or in the original 4:3 with a blurred ambient fill
+- **Fullscreen in one click**, with panoramas in true widescreen (more of the scene, never stretched) or everything in the original 4:3 with a blurred ambient fill
 - **Linux AppImage or `.deb`**, and a **Windows installer** that needs no admin rights
 
 ## Controls
 
 <p align="center">
-  <img src="docs/images/options.webp" width="760" alt="The options menu, switching the aspect ratio between Fill screen and Original 4:3">
+  <img src="docs/images/options.webp" width="760" alt="The options menu, switching the aspect ratio between Widescreen and Original 4:3">
 </p>
 
 <table align="center">

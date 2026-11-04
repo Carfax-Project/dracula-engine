@@ -58,6 +58,7 @@
         "deb"
       ],
       "category": "Game",
+      "synopsis": "Dracula: The Resurrection and The Last Sanctuary, risen from the grave",
       "icon": "src/renderer/assets/icon.png",
       "syncDesktopName": true,
       "artifactName": "Dracula-${version}-${arch}.${ext}"

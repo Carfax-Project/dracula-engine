@@ -148,7 +148,7 @@ scripts/build.mjs         esbuild config (main, preload and the importer as CJS,
 scripts/e2e.mjs           End-to-end smoke test
 scripts/test.mjs          Unit test runner
 test/                     Unit tests (importer decoders, file lookup, util, update check)
-docs/images/              README animations (start screen, three scenes, options menu)
+docs/images/              README animations (three scenes, options menu)
 ```
 
 ## Architecture notes

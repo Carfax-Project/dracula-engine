@@ -9,10 +9,6 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/main-menu.webp" width="760" alt="Start screen">
-</p>
-
-<p align="center">
   <img src="docs/images/scenes.webp" width="760" alt="Looking around a graveyard and a mine in Dracula: The Resurrection and a hall in Dracula 2: The Last Sanctuary">
 </p>
 

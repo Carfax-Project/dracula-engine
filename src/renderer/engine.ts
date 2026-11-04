@@ -481,7 +481,9 @@ export class Engine {
     const vr = await this.loadVR(this.warp.vr);
     if (vr) this.applyVR(vr);
     if (this.warp.test) {
-      const regs = this.index.tests[stemOf(this.file(this.warp.test))];
+      const key = stemOf(this.file(this.warp.test));
+      // Dracula 1's 0M1Script names A18's regions "A18tst", without the dot; the file is A18.tst
+      const regs = this.index.tests[key] ?? this.index.tests[key.replace(/tst$/, '')];
       if (regs) this.regions = regs;
     }
     const view = this.pendingView;

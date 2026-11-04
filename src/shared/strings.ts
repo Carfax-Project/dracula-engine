@@ -17,7 +17,11 @@ export const UI = {
   notFound: "Not found in this folder.",
   folderGone: "Folder is gone.",
   folderInvalid: "No longer holds this game.",
-  folderOutdated: "Old data format; convert this game again.",
+  folderOutdated: "Old data format; remove it and import it again.",
+  remove: "Remove",
+  removeFailed: (reason: string) => "Could not delete: " + reason,
+  updateAvailable: (version: string) => "Version " + version + " is available",
+  updateReimport: "The games will need to be imported again after updating.",
 
   // ---------------------------------------------------------------- importer
   importNoGame: "No game folder chosen yet.",
@@ -38,7 +42,7 @@ export const UI = {
   // -------------------------------------------------------- in-game messages
   classicMouse: "Mouse: Original, the mouse turns the view (F2 to switch)",
   freeMouse: "Mouse: Free cursor, drag to look around (F2 to switch)",
-  stretched: "Aspect ratio: Fill screen (F3 to switch)",
+  widescreen: "Aspect ratio: Widescreen (F3 to switch)",
   original43: "Aspect ratio: Original 4:3 (F3 to switch)",
   volumeValue: (v: number) => Math.round(v * 100) + "%",
   sensitivityValue: (v: number) => v.toFixed(2) + "×",
@@ -48,7 +52,6 @@ export const UI = {
 
   // ---------------------------------------------- main process folder dialogs
   folderDialogTitle: "Folder holding the converted Dracula game data",
-  folderHasNoData: "Neither game was found in that folder.",
-  importGameDialog: "Installed game, a folder with its CD images, or a folder holding both games",
+  folderHasNoData: "Neither game was found in that folder.",  importGameDialog: "Installed game, a folder with its CD images, or a folder holding both games",
   importDestDialog: "Folder to save the converted game in",
 } as const;

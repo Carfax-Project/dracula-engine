@@ -8,7 +8,7 @@
 // keeps saves inside that profile). The game data folders are never written.
 // On a headless Linux box run it under xvfb:  xvfb-run -a npm run test:e2e
 import { _electron } from 'playwright-core';
-import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -17,6 +17,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const shots = join(root, 'test-results');
 mkdirSync(shots, { recursive: true });
 const profile = mkdtempSync(join(tmpdir(), 'dracula-e2e-'));
+writeFileSync(join(profile, 'prefs.json'), JSON.stringify({ updateCheck: false }));
 const games = { dracula1: process.env.DRACULA_TEST_D1, dracula2: process.env.DRACULA_TEST_D2 };
 let failures = 0;
 const check = (ok, msg) => { console.log((ok ? 'ok   ' : 'FAIL ') + msg); if (!ok) failures++; };
@@ -84,7 +85,7 @@ try {
     check(prefs.volume === 0.4, `${id}: volume stored in prefs.json`);
     await win.keyboard.press('F3');
     await win.waitForTimeout(300);
-    check(!(await win.evaluate(() => window.engine.stretch)), `${id}: F3 toggles stretch`);
+    check(!(await win.evaluate(() => window.engine.widescreen)), `${id}: F3 toggles widescreen`);
     await win.keyboard.press('F3');
     await win.evaluate(async () => { const e = window.engine; e.captureContext(); e.saveThumbnail(); await e.saveGame(7); });
     await win.screenshot({ path: join(shots, `${id}.png`) });

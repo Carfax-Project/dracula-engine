@@ -100,11 +100,25 @@ function openSettings(lib: Library, reload: () => void) {
     where.className = 'gwhere';
     where.textContent = foundText(e ?? { id: g.id, path: null, status: 'unset', base: null }, lib.root);
     li.append(mark, name, where);
+    if (e?.status === 'ok' || e?.status === 'outdated') {
+      const remove = document.createElement('button');
+      remove.className = 'sec remove';
+      remove.textContent = UI.remove;
+      remove.onclick = () => confirmRemove(e.path!, async () => {
+        const r = await platform.removeGame(g.id);
+        if (r.error) where.textContent = r.error;
+        else { close(); reload(); }
+      });
+      li.append(remove);
+    }
     list.append(li);
   }
 
   scrim.querySelector('.opts')!.append(clone('tpl-prefs'));
   bindSettings(scrim);
+  const check = scrim.querySelector<HTMLInputElement>('input[name=updateCheck]')!;
+  check.checked = platform.pref('updateCheck', true);
+  check.onchange = () => platform.setPref('updateCheck', check.checked);
   void platform.version().then((v) => { scrim.querySelector('[data-version]')!.textContent = v; });
 
   const close = () => { scrim.remove(); document.onkeydown = null; };
@@ -117,6 +131,23 @@ function openSettings(lib: Library, reload: () => void) {
     if (!r.cancelled) reload();
   };
   scrim.querySelector<HTMLButtonElement>('button[data-import]')!.onclick = () => { close(); openImport(reload); };
+}
+
+// Not a native message box: those crash Electron 44 under KDE on Wayland.
+function confirmRemove(folder: string, onDelete: () => void) {
+  const scrim = document.createElement('div');
+  scrim.className = 'scrim';
+  scrim.append(clone('tpl-remove'));
+  $('ui').append(scrim);
+  scrim.querySelector('.path')!.textContent = folder;
+  const keys = document.onkeydown;
+  const close = () => { scrim.remove(); document.onkeydown = keys; };
+  const cancel = scrim.querySelector<HTMLButtonElement>('button.cancel')!;
+  cancel.onclick = close;
+  scrim.querySelector<HTMLButtonElement>('button.delete')!.onclick = () => { close(); onDelete(); };
+  scrim.onclick = (ev) => { if (ev.target === scrim) close(); };
+  document.onkeydown = (ev) => { if (ev.key === 'Escape') close(); };
+  cancel.focus();
 }
 
 function openImport(reload: () => void) {
@@ -207,9 +238,26 @@ async function render() {
     if (e.status === 'ok') playable.push({ el: games.lastElementChild as HTMLElement, entry: e });
   }
   games.onmouseleave = () => select(-1);
-  ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = () => openSettings(lib, () => void render());
+  ui.querySelector<HTMLButtonElement>('button.gear')!.onclick = async () => {
+    // picks up games copied into the folder, or deleted, since the screen was drawn
+    const fresh = await platform.getLibrary();
+    if (JSON.stringify(fresh) !== JSON.stringify(lib)) await render();
+    openSettings(fresh, () => void render());
+  };
   ui.querySelector<HTMLButtonElement>('button.quit')!.onclick = () => platform.quit();
+  void showUpdate();
   return ready;
+}
+
+async function showUpdate() {
+  if (!platform.pref('updateCheck', true)) return;
+  const u = await platform.checkUpdate();
+  const el = $('ui').querySelector<HTMLElement>('.update');   // gone if a game started meanwhile
+  if (!u || !el) return;
+  el.querySelector('.version')!.textContent = UI.updateAvailable(u.version);
+  el.querySelector('.why')!.textContent = u.reimport ? UI.updateReimport : '';
+  el.querySelector<HTMLButtonElement>('button.get')!.onclick = () => platform.openUpdate();
+  el.hidden = false;
 }
 
 async function start(e: GameEntry) {

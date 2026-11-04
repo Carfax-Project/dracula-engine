@@ -29,7 +29,7 @@
 ## Controls
 
 <p align="center">
-  <img src="docs/images/options.webp" width="760" alt="The options menu, switching the aspect ratio between Fill screen and Original 4:3">
+  <img src="docs/images/options.webp" width="760" alt="The options menu, switching the aspect ratio between Widescreen and Original 4:3">
 </p>
 
 <table align="center">
